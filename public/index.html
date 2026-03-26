@@ -1,0 +1,904 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Slack Summarizer</title>
+  <style>
+    /* ── Reset & Base ─────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #0f0f13;
+      --surface: #18181f;
+      --surface2: #22222c;
+      --border: #2e2e3a;
+      --accent: #7c5cfc;
+      --accent2: #5b8af5;
+      --success: #22c55e;
+      --warning: #f59e0b;
+      --error: #ef4444;
+      --text: #e8e8f0;
+      --muted: #8888a0;
+      --radius: 12px;
+      --radius-sm: 8px;
+    }
+    html { font-size: 15px; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      line-height: 1.6;
+    }
+
+    /* ── Layout ───────────────────────────────────────────────────────── */
+    .app {
+      display: grid;
+      grid-template-columns: 260px 1fr;
+      grid-template-rows: auto 1fr;
+      min-height: 100vh;
+    }
+    header {
+      grid-column: 1 / -1;
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+      position: sticky;
+      top: 0;
+      z-index: 100;
+    }
+    .logo {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      font-weight: 700;
+      font-size: 1.1rem;
+      letter-spacing: -0.3px;
+    }
+    .logo-icon {
+      width: 32px; height: 32px;
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      border-radius: 8px;
+      display: grid; place-items: center;
+      font-size: 16px;
+    }
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+    .ist-clock {
+      font-size: 0.8rem;
+      color: var(--muted);
+      font-variant-numeric: tabular-nums;
+    }
+    .status-dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: var(--error);
+      flex-shrink: 0;
+    }
+    .status-dot.ok { background: var(--success); }
+
+    /* ── Sidebar ──────────────────────────────────────────────────────── */
+    aside {
+      background: var(--surface);
+      border-right: 1px solid var(--border);
+      padding: 20px 16px;
+      display: flex;
+      flex-direction: column;
+      gap: 20px;
+      overflow-y: auto;
+    }
+    .sidebar-section h3 {
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 10px;
+      padding-left: 4px;
+    }
+    .channel-list {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      max-height: 360px;
+      overflow-y: auto;
+    }
+    .channel-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 7px 10px;
+      border-radius: var(--radius-sm);
+      cursor: pointer;
+      font-size: 0.88rem;
+      color: var(--muted);
+      transition: background 0.15s, color 0.15s;
+    }
+    .channel-item:hover { background: var(--surface2); color: var(--text); }
+    .channel-item input[type=checkbox] { accent-color: var(--accent); cursor: pointer; }
+    .channel-item.selected { color: var(--text); }
+    .channel-name { flex: 1; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .ch-private { font-size: 0.7rem; color: var(--muted); }
+
+    .select-all-row {
+      display: flex;
+      justify-content: space-between;
+      margin-bottom: 6px;
+      font-size: 0.8rem;
+      color: var(--muted);
+    }
+    .select-all-row a { color: var(--accent); cursor: pointer; text-decoration: none; }
+    .select-all-row a:hover { text-decoration: underline; }
+
+    /* ── Main content ─────────────────────────────────────────────────── */
+    main {
+      padding: 28px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+    }
+
+    /* ── Cards ────────────────────────────────────────────────────────── */
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 22px;
+    }
+    .card-title {
+      font-size: 0.75rem;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 16px;
+    }
+
+    /* ── Setup wizard ─────────────────────────────────────────────────── */
+    #setup-card { display: none; }
+    .setup-steps { display: flex; flex-direction: column; gap: 18px; }
+    .step {
+      display: grid;
+      grid-template-columns: 28px 1fr;
+      gap: 12px;
+      align-items: start;
+    }
+    .step-num {
+      width: 28px; height: 28px;
+      border-radius: 50%;
+      background: var(--accent);
+      display: grid; place-items: center;
+      font-size: 0.8rem;
+      font-weight: 700;
+      flex-shrink: 0;
+    }
+    .step-body h4 { font-size: 0.95rem; margin-bottom: 4px; }
+    .step-body p { font-size: 0.85rem; color: var(--muted); line-height: 1.5; }
+    .step-body code {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 5px;
+      padding: 2px 6px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.82rem;
+      color: var(--accent2);
+    }
+    .step-body pre {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 12px 14px;
+      margin-top: 8px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.8rem;
+      color: var(--text);
+      overflow-x: auto;
+      line-height: 1.6;
+    }
+    .scopes-grid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 6px;
+      margin-top: 8px;
+    }
+    .scope-tag {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 3px 10px;
+      font-size: 0.75rem;
+      font-family: monospace;
+      color: var(--accent2);
+    }
+
+    /* ── Controls ─────────────────────────────────────────────────────── */
+    .controls-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      flex-wrap: wrap;
+    }
+    .btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 20px;
+      border-radius: var(--radius-sm);
+      border: none;
+      cursor: pointer;
+      font-size: 0.9rem;
+      font-weight: 600;
+      transition: all 0.15s;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, var(--accent), var(--accent2));
+      color: #fff;
+    }
+    .btn-primary:hover { opacity: 0.88; transform: translateY(-1px); }
+    .btn-primary:active { transform: translateY(0); }
+    .btn-primary:disabled { opacity: 0.45; cursor: not-allowed; transform: none; }
+    .btn-ghost {
+      background: var(--surface2);
+      color: var(--text);
+      border: 1px solid var(--border);
+    }
+    .btn-ghost:hover { background: var(--border); }
+
+    .time-filter {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .time-filter select {
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-size: 0.85rem;
+      cursor: pointer;
+    }
+    .custom-range {
+      display: none;
+      gap: 10px;
+      align-items: center;
+      flex-wrap: wrap;
+      margin-top: 10px;
+      padding: 12px 14px;
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+    .custom-range.visible { display: flex; }
+    .custom-range label { font-size: 0.82rem; color: var(--muted); }
+    .custom-range input[type=datetime-local] {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      color: var(--text);
+      border-radius: var(--radius-sm);
+      padding: 6px 10px;
+      font-size: 0.84rem;
+      color-scheme: dark;
+      cursor: pointer;
+    }
+    .custom-range .arrow { color: var(--muted); font-size: 1rem; }
+
+    /* ── Meta row ─────────────────────────────────────────────────────── */
+    .meta-row {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      flex-wrap: wrap;
+      font-size: 0.82rem;
+      color: var(--muted);
+      padding: 10px 16px;
+      background: var(--surface2);
+      border-radius: var(--radius-sm);
+    }
+    .meta-badge {
+      display: inline-flex;
+      align-items: center;
+      gap: 5px;
+    }
+
+    /* ── Summary output ───────────────────────────────────────────────── */
+    #summary-output {
+      display: none;
+    }
+    .summary-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      margin-bottom: 14px;
+      flex-wrap: wrap;
+      gap: 8px;
+    }
+    .summary-period {
+      font-size: 0.8rem;
+      color: var(--muted);
+      background: var(--surface2);
+      border: 1px solid var(--border);
+      padding: 4px 10px;
+      border-radius: 20px;
+    }
+    .dm-badge {
+      font-size: 0.78rem;
+      padding: 4px 10px;
+      border-radius: 20px;
+      background: rgba(34,197,94,0.1);
+      color: var(--success);
+      border: 1px solid rgba(34,197,94,0.25);
+    }
+    .dm-badge.failed {
+      background: rgba(239,68,68,0.1);
+      color: var(--error);
+      border-color: rgba(239,68,68,0.25);
+    }
+    /* ── Loading ──────────────────────────────────────────────────────── */
+    .loader {
+      display: none;
+      align-items: center;
+      gap: 14px;
+      padding: 28px;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+    .spinner {
+      width: 22px; height: 22px;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Error ────────────────────────────────────────────────────────── */
+    .error-box {
+      display: none;
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.25);
+      border-radius: var(--radius-sm);
+      padding: 14px 18px;
+      color: var(--error);
+      font-size: 0.87rem;
+    }
+
+    /* ── History ──────────────────────────────────────────────────────── */
+    .history-list { display: flex; flex-direction: column; gap: 10px; }
+    .history-item {
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 14px 16px;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .history-item:hover { background: var(--surface2); }
+    .history-item-header {
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.82rem;
+      color: var(--muted);
+      margin-bottom: 6px;
+      flex-wrap: wrap;
+      gap: 6px;
+    }
+    .history-preview {
+      font-size: 0.85rem;
+      color: var(--text);
+      overflow: hidden;
+      display: -webkit-box;
+      -webkit-line-clamp: 2;
+      -webkit-box-orient: vertical;
+    }
+    .history-empty { color: var(--muted); font-size: 0.88rem; }
+
+    /* ── Mobile ───────────────────────────────────────────────────────── */
+    .hamburger {
+      display: none;
+      background: none;
+      border: none;
+      color: var(--text);
+      cursor: pointer;
+      font-size: 1.3rem;
+      padding: 4px;
+    }
+    .sidebar-overlay {
+      display: none;
+      position: fixed;
+      inset: 0;
+      background: rgba(0,0,0,0.6);
+      z-index: 90;
+    }
+
+    @media (max-width: 768px) {
+      .app { grid-template-columns: 1fr; }
+      aside {
+        position: fixed;
+        top: 0; left: -100%;
+        width: min(300px, 85vw);
+        height: 100vh;
+        z-index: 95;
+        transition: left 0.25s ease;
+        padding-top: 70px;
+      }
+      aside.open { left: 0; }
+      .sidebar-overlay.open { display: block; }
+      .hamburger { display: block; }
+      main { padding: 16px; }
+      header { padding: 12px 16px; }
+      .controls-row { flex-direction: column; align-items: stretch; }
+      .btn { justify-content: center; }
+    }
+
+    /* ── Markdown rendering ───────────────────────────────────────────── */
+    .rendered-summary h3 { color: var(--accent2); margin: 16px 0 6px; font-size: 0.95rem; }
+    .rendered-summary h2 { color: var(--text); margin: 18px 0 8px; font-size: 1rem; }
+    .rendered-summary ul, .rendered-summary ol { padding-left: 20px; margin: 6px 0; }
+    .rendered-summary li { margin: 3px 0; font-size: 0.88rem; }
+    .rendered-summary p { margin: 6px 0; font-size: 0.88rem; }
+    .rendered-summary strong { color: var(--text); }
+    .rendered-summary em { color: var(--muted); }
+    .rendered-summary hr { border: none; border-top: 1px solid var(--border); margin: 12px 0; }
+  </style>
+</head>
+<body>
+
+<div class="app">
+
+  <!-- Header -->
+  <header>
+    <div style="display:flex;align-items:center;gap:12px;">
+      <button class="hamburger" id="hamburger" aria-label="Menu">☰</button>
+      <div class="logo">
+        <div class="logo-icon">⚡</div>
+        Slack Summarizer
+      </div>
+    </div>
+    <div class="header-right">
+      <span class="ist-clock" id="ist-clock">–</span>
+      <span class="status-dot" id="status-dot"></span>
+    </div>
+  </header>
+
+  <!-- Sidebar overlay (mobile) -->
+  <div class="sidebar-overlay" id="sidebar-overlay"></div>
+
+  <!-- Sidebar -->
+  <aside id="sidebar">
+    <div class="sidebar-section">
+      <h3>Channels</h3>
+      <div class="select-all-row">
+        <span id="ch-count">–</span>
+        <span><a id="select-all">All</a> · <a id="deselect-all">None</a></span>
+      </div>
+      <div class="channel-list" id="channel-list">
+        <div style="color:var(--muted);font-size:0.82rem;padding:8px 4px;">Loading…</div>
+      </div>
+    </div>
+
+    <div class="sidebar-section" style="margin-top:auto;">
+      <h3>Last Summary</h3>
+      <div style="font-size:0.82rem;color:var(--muted);padding:4px;" id="last-summary-label">–</div>
+    </div>
+  </aside>
+
+  <!-- Main -->
+  <main>
+
+    <!-- Setup card -->
+    <div class="card" id="setup-card">
+      <div class="card-title">Setup required</div>
+      <div class="setup-steps">
+
+        <div class="step">
+          <div class="step-num">1</div>
+          <div class="step-body">
+            <h4>Create a Slack App</h4>
+            <p>Go to <strong>api.slack.com/apps</strong> → <em>Create New App</em> → <em>From scratch</em>.<br>
+            Give it a name (e.g. "Summarizer") and select your workspace.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">2</div>
+          <div class="step-body">
+            <h4>Add OAuth Scopes</h4>
+            <p>Under <em>OAuth &amp; Permissions → Bot Token Scopes</em>, add these scopes:</p>
+            <div class="scopes-grid">
+              <span class="scope-tag">channels:history</span>
+              <span class="scope-tag">channels:read</span>
+              <span class="scope-tag">groups:history</span>
+              <span class="scope-tag">groups:read</span>
+              <span class="scope-tag">im:history</span>
+              <span class="scope-tag">im:read</span>
+              <span class="scope-tag">im:write</span>
+              <span class="scope-tag">mpim:history</span>
+              <span class="scope-tag">mpim:read</span>
+              <span class="scope-tag">users:read</span>
+              <span class="scope-tag">chat:write</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">3</div>
+          <div class="step-body">
+            <h4>Install &amp; get Bot Token</h4>
+            <p>Click <em>Install to Workspace</em>. Copy the <strong>Bot User OAuth Token</strong> (starts with <code>xoxb-</code>).</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">4</div>
+          <div class="step-body">
+            <h4>Find your Slack User ID</h4>
+            <p>In Slack, click your name → <em>Profile</em> → <em>⋯ More</em> → <em>Copy member ID</em>. It looks like <code>U0XXXXXXXXX</code>.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">5</div>
+          <div class="step-body">
+            <h4>Get Anthropic API Key</h4>
+            <p>Sign up at <strong>console.anthropic.com</strong>, go to <em>API Keys</em> and create a new key.</p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">6</div>
+          <div class="step-body">
+            <h4>Create <code>.env</code> file</h4>
+            <p>In the project folder (<code>slack-summarizer/</code>), create a <code>.env</code> file:</p>
+            <pre>SLACK_BOT_TOKEN=xoxb-your-token-here
+SLACK_USER_ID=U0XXXXXXXXX
+ANTHROPIC_API_KEY=sk-ant-your-key-here</pre>
+            <p style="margin-top:8px;">Then restart the server: <code>npm start</code></p>
+          </div>
+        </div>
+
+        <div class="step">
+          <div class="step-num">7</div>
+          <div class="step-body">
+            <h4>Invite bot to channels</h4>
+            <p>In each Slack channel you want summarized, type <code>/invite @YourBotName</code>.</p>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- Controls card -->
+    <div class="card" id="controls-card">
+      <div class="card-title">Generate Summary</div>
+
+      <div class="controls-row" style="margin-bottom:10px;">
+        <div class="time-filter">
+          <span>Time range:</span>
+          <select id="time-override" onchange="onRangeChange(this.value)">
+            <option value="0">Since last summary</option>
+            <option value="1">Past 1 hour</option>
+            <option value="6">Past 6 hours</option>
+            <option value="12">Past 12 hours</option>
+            <option value="24">Past 24 hours</option>
+            <option value="48">Past 48 hours</option>
+            <option value="168">Past 1 week</option>
+            <option value="custom">Custom: pick dates ▾</option>
+          </select>
+        </div>
+        <button class="btn btn-primary" id="summarize-btn">
+          <span>⚡</span> Summarize &amp; DM Me
+        </button>
+      </div>
+      <div class="custom-range" id="custom-range">
+        <label>From</label>
+        <input type="datetime-local" id="range-from" />
+        <span class="arrow">→</span>
+        <label>To</label>
+        <input type="datetime-local" id="range-to" />
+      </div>
+
+      <div class="meta-row" id="meta-row" style="display:none;">
+        <span class="meta-badge" id="meta-from">📅 –</span>
+        <span class="meta-badge" id="meta-channels">📢 –</span>
+        <span class="meta-badge" id="meta-dm">💬 –</span>
+      </div>
+
+      <div class="loader" id="loader">
+        <div class="spinner"></div>
+        <span id="loader-text">Fetching messages…</span>
+      </div>
+
+      <div class="error-box" id="error-box"></div>
+    </div>
+
+    <!-- Summary output -->
+    <div class="card" id="summary-output">
+      <div class="summary-header">
+        <div class="card-title" style="margin:0;">Latest Summary</div>
+        <div style="display:flex;gap:8px;align-items:center;flex-wrap:wrap;">
+          <span class="summary-period" id="summary-period">–</span>
+          <span class="dm-badge" id="dm-status-badge">DM sent ✓</span>
+        </div>
+      </div>
+      <div class="rendered-summary" id="summary-content"></div>
+    </div>
+
+    <!-- History -->
+    <div class="card" id="history-card" style="display:none;">
+      <div class="card-title">Past Summaries</div>
+      <div class="history-list" id="history-list"></div>
+    </div>
+
+  </main>
+</div>
+
+<script>
+// ── IST clock ──────────────────────────────────────────────────────────────
+function updateClock() {
+  document.getElementById('ist-clock').textContent =
+    new Date().toLocaleString('en-IN', {
+      timeZone: 'Asia/Kolkata',
+      hour: '2-digit', minute: '2-digit', second: '2-digit',
+      hour12: true
+    }) + ' IST';
+}
+updateClock();
+setInterval(updateClock, 1000);
+
+// ── Mobile sidebar ─────────────────────────────────────────────────────────
+const sidebar = document.getElementById('sidebar');
+const overlay = document.getElementById('sidebar-overlay');
+document.getElementById('hamburger').addEventListener('click', () => {
+  sidebar.classList.toggle('open');
+  overlay.classList.toggle('open');
+});
+overlay.addEventListener('click', () => {
+  sidebar.classList.remove('open');
+  overlay.classList.remove('open');
+});
+
+// ── State ──────────────────────────────────────────────────────────────────
+let allChannels = [];
+let selectedChannels = new Set();
+
+// ── Init ───────────────────────────────────────────────────────────────────
+async function init() {
+  const status = await fetchJSON('/api/status');
+  const dot = document.getElementById('status-dot');
+  const setupCard = document.getElementById('setup-card');
+
+  if (!status.configured) {
+    dot.classList.remove('ok');
+    setupCard.style.display = 'block';
+    document.getElementById('summarize-btn').disabled = true;
+    document.getElementById('channel-list').innerHTML =
+      '<div style="color:var(--muted);font-size:0.82rem;padding:8px 4px;">Configure .env first</div>';
+    return;
+  }
+
+  dot.classList.add('ok');
+  setupCard.style.display = 'none';
+
+  if (status.lastSummaryIST) {
+    document.getElementById('last-summary-label').textContent = status.lastSummaryIST;
+  }
+
+  loadChannels();
+  loadHistory();
+}
+
+// ── Channels ───────────────────────────────────────────────────────────────
+async function loadChannels() {
+  try {
+    const data = await fetchJSON('/api/channels');
+    allChannels = data.channels || [];
+    selectedChannels = new Set(allChannels.map(c => c.id));
+    renderChannels();
+  } catch (e) {
+    document.getElementById('channel-list').innerHTML =
+      `<div style="color:var(--error);font-size:0.82rem;padding:8px 4px;">${e.message}</div>`;
+  }
+}
+
+function renderChannels() {
+  const list = document.getElementById('channel-list');
+  document.getElementById('ch-count').textContent = `${allChannels.length} channels`;
+
+  if (!allChannels.length) {
+    list.innerHTML = '<div style="color:var(--muted);font-size:0.82rem;padding:8px 4px;">No channels found. Invite the bot to some channels.</div>';
+    return;
+  }
+
+  list.innerHTML = allChannels.map(ch => `
+    <label class="channel-item ${selectedChannels.has(ch.id) ? 'selected' : ''}">
+      <input type="checkbox" value="${ch.id}" ${selectedChannels.has(ch.id) ? 'checked' : ''}
+        onchange="toggleChannel('${ch.id}', this.checked)" />
+      <span class="channel-name">${ch.is_private ? '🔒' : '#'} ${ch.name}</span>
+      ${ch.num_members ? `<span class="ch-private">${ch.num_members}</span>` : ''}
+    </label>
+  `).join('');
+}
+
+function toggleChannel(id, checked) {
+  checked ? selectedChannels.add(id) : selectedChannels.delete(id);
+  const label = document.querySelector(`input[value="${id}"]`)?.parentElement;
+  if (label) label.classList.toggle('selected', checked);
+}
+
+document.getElementById('select-all').addEventListener('click', () => {
+  selectedChannels = new Set(allChannels.map(c => c.id));
+  renderChannels();
+});
+document.getElementById('deselect-all').addEventListener('click', () => {
+  selectedChannels.clear();
+  renderChannels();
+});
+
+// ── Custom range toggle ─────────────────────────────────────────────────────
+function onRangeChange(val) {
+  const box = document.getElementById('custom-range');
+  box.classList.toggle('visible', val === 'custom');
+  if (val === 'custom') {
+    // Default: from yesterday IST to now
+    const now = new Date();
+    const yesterday = new Date(now - 24 * 60 * 60 * 1000);
+    document.getElementById('range-to').value = toLocalInput(now);
+    document.getElementById('range-from').value = toLocalInput(yesterday);
+  }
+}
+function toLocalInput(date) {
+  // datetime-local expects "YYYY-MM-DDTHH:MM" in local time
+  const pad = n => String(n).padStart(2, '0');
+  return `${date.getFullYear()}-${pad(date.getMonth()+1)}-${pad(date.getDate())}T${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+// ── Summarize ──────────────────────────────────────────────────────────────
+document.getElementById('summarize-btn').addEventListener('click', async () => {
+  const btn = document.getElementById('summarize-btn');
+  const loader = document.getElementById('loader');
+  const errorBox = document.getElementById('error-box');
+  const metaRow = document.getElementById('meta-row');
+  const rangeVal = document.getElementById('time-override').value;
+  const hours = rangeVal === 'custom' ? 0 : parseInt(rangeVal, 10);
+
+  let fromTs = null, toTs = null;
+  if (rangeVal === 'custom') {
+    const fromVal = document.getElementById('range-from').value;
+    const toVal   = document.getElementById('range-to').value;
+    if (!fromVal || !toVal) {
+      errorBox.textContent = '⚠ Please pick both a From and To date/time.';
+      errorBox.style.display = 'block';
+      return;
+    }
+    fromTs = Math.floor(new Date(fromVal).getTime() / 1000);
+    toTs   = Math.floor(new Date(toVal).getTime() / 1000);
+    if (toTs <= fromTs) {
+      errorBox.textContent = '⚠ "To" time must be after "From" time.';
+      errorBox.style.display = 'block';
+      return;
+    }
+  }
+
+  errorBox.style.display = 'none';
+  document.getElementById('summary-output').style.display = 'none';
+  metaRow.style.display = 'none';
+  btn.disabled = true;
+  loader.style.display = 'flex';
+
+  const steps = ['Fetching messages…', 'Resolving users…', 'Generating summary with Claude…', 'Sending DM…'];
+  let stepIdx = 0;
+  const loaderText = document.getElementById('loader-text');
+  const stepTimer = setInterval(() => {
+    stepIdx = (stepIdx + 1) % steps.length;
+    loaderText.textContent = steps[stepIdx];
+  }, 2200);
+
+  try {
+    const data = await fetchJSON('/api/summarize', {
+      method: 'POST',
+      body: JSON.stringify({ channelIds: [...selectedChannels], hours: hours || 0, fromTs, toTs })
+    });
+
+    const dmOk = !data.dmStatus || data.dmStatus === 'sent';
+
+    document.getElementById('meta-from').textContent = `📅 From: ${data.fromIST}`;
+    document.getElementById('meta-channels').textContent = `📢 ${data.channelCount} channels`;
+    document.getElementById('meta-dm').textContent = dmOk ? '💬 DM sent ✓' : '💬 DM failed';
+    metaRow.style.display = 'flex';
+
+    document.getElementById('summary-period').textContent = `${data.fromIST} → ${data.toIST}`;
+    const dmBadge = document.getElementById('dm-status-badge');
+    dmBadge.textContent = dmOk ? 'DM sent ✓' : 'DM failed ✗';
+    dmBadge.className = dmOk ? 'dm-badge' : 'dm-badge failed';
+    document.getElementById('summary-content').innerHTML = renderMarkdown(data.summary);
+    document.getElementById('summary-output').style.display = 'block';
+    document.getElementById('last-summary-label').textContent = data.toIST;
+
+    loadHistory();
+
+  } catch (e) {
+    errorBox.textContent = '⚠ ' + e.message;
+    errorBox.style.display = 'block';
+  } finally {
+    clearInterval(stepTimer);
+    loader.style.display = 'none';
+    btn.disabled = false;
+  }
+});
+
+// ── History ────────────────────────────────────────────────────────────────
+async function loadHistory() {
+  try {
+    const data = await fetchJSON('/api/history');
+    const summaries = data.summaries || [];
+    const card = document.getElementById('history-card');
+    const list = document.getElementById('history-list');
+
+    if (!summaries.length) { card.style.display = 'none'; return; }
+    card.style.display = 'block';
+
+    list.innerHTML = summaries.map((s, i) => `
+      <div class="history-item" onclick="expandHistory(${i})">
+        <div class="history-item-header">
+          <span>${s.ist}</span>
+          <span>${s.channelCount} channels · from ${s.fromIST}</span>
+        </div>
+        <div class="history-preview" id="hist-preview-${i}">${escapeHtml(s.summary.slice(0, 180))}…</div>
+        <div style="display:none;" id="hist-full-${i}" class="rendered-summary">${renderMarkdown(s.summary)}</div>
+      </div>
+    `).join('');
+  } catch {}
+}
+
+function expandHistory(i) {
+  const preview = document.getElementById(`hist-preview-${i}`);
+  const full = document.getElementById(`hist-full-${i}`);
+  const isExpanded = full.style.display !== 'none';
+  preview.style.display = isExpanded ? '-webkit-box' : 'none';
+  full.style.display = isExpanded ? 'none' : 'block';
+}
+
+// ── Markdown renderer (lightweight) ───────────────────────────────────────
+function renderMarkdown(text) {
+  return escapeHtml(text)
+    .replace(/^### (.+)$/gm, '<h3>$1</h3>')
+    .replace(/^## (.+)$/gm, '<h2>$1</h2>')
+    .replace(/^# (.+)$/gm, '<h2>$1</h2>')
+    .replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>')
+    .replace(/\*(.+?)\*/g, '<em>$1</em>')
+    .replace(/^- (.+)$/gm, '<li>$1</li>')
+    .replace(/(<li>.*<\/li>\n?)+/g, s => `<ul>${s}</ul>`)
+    .replace(/^---$/gm, '<hr>')
+    .replace(/\n\n+/g, '</p><p>')
+    .replace(/^(?!<[hul]|<\/[ul]|<li|<hr)(.+)$/gm, '<p>$1</p>')
+    .replace(/<p><\/p>/g, '');
+}
+
+function escapeHtml(str) {
+  return str.replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+// ── Fetch helper ───────────────────────────────────────────────────────────
+async function fetchJSON(url, opts = {}) {
+  const headers = { 'Content-Type': 'application/json', ...(opts.headers || {}) };
+  const res = await fetch(url, { ...opts, headers });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || `HTTP ${res.status}`);
+  return json;
+}
+
+// ── Boot ───────────────────────────────────────────────────────────────────
+init();
+</script>
+</body>
+</html>

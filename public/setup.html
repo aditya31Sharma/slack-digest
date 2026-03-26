@@ -1,0 +1,896 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Setup — Slack Summarizer</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    :root {
+      --bg: #f5f5f7;
+      --white: #ffffff;
+      --border: #d1d1d6;
+      --accent: #0071e3;
+      --accent-dark: #0051a8;
+      --success: #1a9e3f;
+      --success-bg: #edf7f0;
+      --error: #c0392b;
+      --error-bg: #fdf2f2;
+      --text: #1c1c1e;
+      --muted: #6e6e73;
+      --step-inactive: #d1d1d6;
+      --radius: 16px;
+      --radius-sm: 10px;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      min-height: 100vh;
+      font-size: 17px;
+      line-height: 1.6;
+    }
+
+    /* ── Progress bar ── */
+    .progress-bar {
+      position: sticky;
+      top: 0;
+      z-index: 50;
+      background: var(--white);
+      border-bottom: 1px solid var(--border);
+      padding: 14px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+    .progress-logo { font-size: 22px; }
+    .progress-title { font-weight: 700; font-size: 1rem; flex: 1; }
+    .progress-steps {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+    }
+    .prog-dot {
+      width: 10px; height: 10px;
+      border-radius: 50%;
+      background: var(--step-inactive);
+      transition: background 0.3s;
+    }
+    .prog-dot.active { background: var(--accent); }
+    .prog-dot.done { background: var(--success); }
+    .progress-label {
+      font-size: 0.82rem;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    /* ── Page layout ── */
+    .page {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 36px 20px 80px;
+    }
+    .page-intro {
+      text-align: center;
+      margin-bottom: 36px;
+    }
+    .page-intro h1 {
+      font-size: 2rem;
+      font-weight: 800;
+      letter-spacing: -0.5px;
+      margin-bottom: 8px;
+    }
+    .page-intro p {
+      color: var(--muted);
+      font-size: 1rem;
+    }
+    .time-chips {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      margin-top: 14px;
+      flex-wrap: wrap;
+    }
+    .time-chip {
+      background: var(--white);
+      border: 1px solid var(--border);
+      border-radius: 20px;
+      padding: 4px 12px;
+      font-size: 0.82rem;
+      color: var(--muted);
+    }
+    .time-chip strong { color: var(--text); }
+
+    /* ── Step card ── */
+    .step-card {
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      margin-bottom: 14px;
+      overflow: hidden;
+      transition: border-color 0.2s, box-shadow 0.2s;
+    }
+    .step-card.active {
+      border-color: var(--accent);
+      box-shadow: 0 2px 20px rgba(0,113,227,0.1);
+    }
+    .step-card.done { border-color: #a3d9b1; }
+    .step-card.locked { opacity: 0.55; }
+
+    .step-header {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      padding: 20px 24px;
+    }
+    .step-num {
+      width: 36px; height: 36px;
+      border-radius: 50%;
+      background: var(--bg);
+      border: 2px solid var(--border);
+      display: grid; place-items: center;
+      font-size: 0.9rem;
+      font-weight: 800;
+      flex-shrink: 0;
+      color: var(--muted);
+      transition: all 0.2s;
+    }
+    .step-card.active .step-num {
+      background: var(--accent);
+      border-color: var(--accent);
+      color: #fff;
+    }
+    .step-card.done .step-num {
+      background: var(--success);
+      border-color: var(--success);
+      color: #fff;
+      font-size: 1rem;
+    }
+    .step-info { flex: 1; }
+    .step-title { font-weight: 700; font-size: 1.05rem; }
+    .step-desc { font-size: 0.85rem; color: var(--muted); margin-top: 2px; }
+    .step-time {
+      font-size: 0.78rem;
+      color: var(--muted);
+      background: var(--bg);
+      padding: 3px 9px;
+      border-radius: 12px;
+      border: 1px solid var(--border);
+      white-space: nowrap;
+    }
+
+    .step-body {
+      display: none;
+      padding: 0 24px 24px;
+      border-top: 1px solid var(--border);
+    }
+    .step-card.active .step-body { display: block; }
+
+    /* ── Instructions ── */
+    .instruct {
+      margin: 18px 0;
+      display: flex;
+      flex-direction: column;
+      gap: 14px;
+    }
+    .instruct-row {
+      display: flex;
+      gap: 14px;
+      align-items: flex-start;
+    }
+    .instruct-num {
+      width: 26px; height: 26px;
+      border-radius: 50%;
+      background: var(--accent);
+      color: #fff;
+      display: grid; place-items: center;
+      font-size: 0.78rem;
+      font-weight: 700;
+      flex-shrink: 0;
+      margin-top: 1px;
+    }
+    .instruct-text { font-size: 0.93rem; line-height: 1.6; }
+    .instruct-text strong { color: var(--text); }
+
+    /* ── Big action link/button ── */
+    .action-link {
+      display: flex;
+      align-items: center;
+      gap: 10px;
+      background: var(--accent);
+      color: #fff;
+      text-decoration: none;
+      border-radius: var(--radius-sm);
+      padding: 14px 20px;
+      font-weight: 700;
+      font-size: 1rem;
+      margin: 6px 0;
+      transition: background 0.15s;
+    }
+    .action-link:hover { background: var(--accent-dark); }
+    .action-link .arrow { margin-left: auto; font-size: 1.1rem; }
+
+    /* ── Copy box ── */
+    .copy-box {
+      background: #1c1c1e;
+      border-radius: var(--radius-sm);
+      margin: 14px 0;
+      overflow: hidden;
+    }
+    .copy-box-header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 10px 14px;
+      border-bottom: 1px solid #333;
+    }
+    .copy-box-label { font-size: 0.78rem; color: #888; font-weight: 600; letter-spacing: 0.5px; }
+    .copy-btn {
+      background: #333;
+      color: #ddd;
+      border: none;
+      border-radius: 6px;
+      padding: 4px 12px;
+      font-size: 0.8rem;
+      cursor: pointer;
+      font-weight: 600;
+      transition: background 0.15s;
+    }
+    .copy-btn:hover { background: #444; }
+    .copy-btn.copied { background: #1a5c2a; color: #6ee89a; }
+    .copy-box pre {
+      padding: 14px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.78rem;
+      color: #a8d8a8;
+      overflow-x: auto;
+      line-height: 1.5;
+      white-space: pre;
+    }
+
+    /* ── Input field ── */
+    .field { margin: 16px 0 4px; }
+    .field-label {
+      display: block;
+      font-weight: 600;
+      font-size: 0.88rem;
+      margin-bottom: 6px;
+      color: var(--text);
+    }
+    .field-sub {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+    .field-input-wrap { position: relative; }
+    .field-input {
+      width: 100%;
+      background: var(--bg);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius-sm);
+      padding: 13px 44px 13px 14px;
+      font-size: 0.95rem;
+      color: var(--text);
+      font-family: 'SF Mono', Consolas, monospace;
+      outline: none;
+      transition: border-color 0.15s;
+    }
+    .field-input:focus { border-color: var(--accent); background: #fff; }
+    .field-input.valid { border-color: var(--success); }
+    .field-input.invalid { border-color: var(--error); }
+    .field-icon {
+      position: absolute;
+      right: 13px;
+      top: 50%;
+      transform: translateY(-50%);
+      font-size: 1.1rem;
+      pointer-events: none;
+    }
+    .field-hint {
+      font-size: 0.78rem;
+      color: var(--muted);
+      margin-top: 5px;
+    }
+
+    /* ── Next button ── */
+    .next-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      width: 100%;
+      padding: 14px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 20px;
+      transition: background 0.15s, opacity 0.15s;
+    }
+    .next-btn:hover { background: var(--accent-dark); }
+    .next-btn:disabled { opacity: 0.35; cursor: not-allowed; }
+
+    /* ── Info callout ── */
+    .callout {
+      background: #f0f6ff;
+      border: 1px solid #b3d1ff;
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-size: 0.85rem;
+      color: #1a4a8a;
+      margin: 14px 0;
+      line-height: 1.5;
+    }
+
+    /* ── Final section ── */
+    #final-section {
+      display: none;
+      background: var(--white);
+      border: 1.5px solid var(--border);
+      border-radius: var(--radius);
+      padding: 28px 24px;
+      text-align: center;
+    }
+    #final-section h2 { font-size: 1.3rem; font-weight: 800; margin-bottom: 6px; }
+    #final-section .subtitle { color: var(--muted); font-size: 0.9rem; margin-bottom: 24px; }
+
+    .verify-list {
+      text-align: left;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 24px;
+    }
+    .verify-row {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 12px 16px;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      font-size: 0.92rem;
+    }
+    .verify-icon { font-size: 1.2rem; width: 26px; text-align: center; flex-shrink: 0; }
+    .verify-label { flex: 1; }
+    .verify-status { font-size: 0.82rem; color: var(--muted); }
+    .verify-row.ok .verify-status { color: var(--success); font-weight: 600; }
+    .verify-row.fail .verify-status { color: var(--error); font-weight: 600; }
+
+    .connect-btn {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 10px;
+      width: 100%;
+      padding: 16px;
+      background: var(--accent);
+      color: #fff;
+      border: none;
+      border-radius: var(--radius-sm);
+      font-size: 1.05rem;
+      font-weight: 700;
+      cursor: pointer;
+      transition: background 0.15s;
+    }
+    .connect-btn:hover { background: var(--accent-dark); }
+    .connect-btn:disabled { opacity: 0.4; cursor: not-allowed; }
+
+    .status-msg {
+      display: none;
+      border-radius: var(--radius-sm);
+      padding: 13px 16px;
+      font-size: 0.88rem;
+      margin-top: 14px;
+      line-height: 1.5;
+      text-align: left;
+    }
+    .status-msg.error { background: var(--error-bg); border: 1px solid #f0b8b8; color: var(--error); display: block; }
+    .status-msg.success { background: var(--success-bg); border: 1px solid #a3d9b1; color: var(--success); display: block; }
+    .status-msg.loading { background: #f0f4ff; border: 1px solid #b3d1ff; color: #1a4a8a; display: flex; align-items: center; gap: 10px; }
+
+    .spinner {
+      width: 18px; height: 18px;
+      border: 2.5px solid #b3d1ff;
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.7s linear infinite;
+      flex-shrink: 0;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* ── Invite reminder (post-setup) ── */
+    #invite-reminder {
+      display: none;
+      background: var(--white);
+      border: 1.5px solid #a3d9b1;
+      border-radius: var(--radius);
+      padding: 24px;
+      margin-top: 14px;
+      text-align: center;
+    }
+    #invite-reminder h3 { font-size: 1.05rem; font-weight: 700; margin-bottom: 6px; }
+    #invite-reminder p { color: var(--muted); font-size: 0.88rem; margin-bottom: 14px; }
+    .invite-cmd {
+      background: #1c1c1e;
+      color: #6ee89a;
+      border-radius: var(--radius-sm);
+      padding: 12px 16px;
+      font-family: 'SF Mono', Consolas, monospace;
+      font-size: 0.9rem;
+      text-align: left;
+      margin: 8px 0;
+    }
+    .goto-btn {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      background: var(--success);
+      color: #fff;
+      text-decoration: none;
+      border: none;
+      border-radius: var(--radius-sm);
+      padding: 13px 24px;
+      font-size: 1rem;
+      font-weight: 700;
+      cursor: pointer;
+      margin-top: 16px;
+      transition: opacity 0.15s;
+    }
+    .goto-btn:hover { opacity: 0.88; }
+
+    @media (max-width: 480px) {
+      .page { padding: 24px 14px 60px; }
+      .page-intro h1 { font-size: 1.5rem; }
+      .step-header { padding: 16px; gap: 12px; }
+      .step-body { padding: 0 16px 20px; }
+    }
+  </style>
+</head>
+<body>
+
+<!-- Progress bar -->
+<div class="progress-bar">
+  <span class="progress-logo">⚡</span>
+  <span class="progress-title">Slack Summarizer</span>
+  <div class="progress-steps">
+    <div class="prog-dot active" id="dot-1"></div>
+    <div class="prog-dot" id="dot-2"></div>
+    <div class="prog-dot" id="dot-3"></div>
+  </div>
+  <span class="progress-label" id="progress-label">Step 1 of 3</span>
+</div>
+
+<div class="page">
+
+  <div class="page-intro">
+    <h1>Let's get you set up</h1>
+    <p>Follow the 3 steps below. Each one has a big button that opens the right page for you.</p>
+    <div class="time-chips">
+      <span class="time-chip">⏱ <strong>~10 minutes</strong> total</span>
+      <span class="time-chip">🖱 No coding needed</span>
+      <span class="time-chip">🔒 Your info stays on your computer</span>
+    </div>
+  </div>
+
+  <!-- ── STEP 1: Slack ── -->
+  <div class="step-card active" id="card-1">
+    <div class="step-header">
+      <div class="step-num" id="num-1">1</div>
+      <div class="step-info">
+        <div class="step-title">Connect to Slack</div>
+        <div class="step-desc">Create a small helper bot in your Slack workspace</div>
+      </div>
+      <span class="step-time">~6 min</span>
+    </div>
+    <div class="step-body">
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">1</div>
+          <div class="instruct-text">Click the button below. It opens Slack's website. Sign in if asked.</div>
+        </div>
+      </div>
+
+      <a class="action-link" href="https://api.slack.com/apps/new" target="_blank">
+        🔗 Open Slack — Create App <span class="arrow">↗</span>
+      </a>
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">2</div>
+          <div class="instruct-text">On that page, click <strong>"From an app manifest"</strong>, then pick your workspace and click <strong>Next</strong>.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">3</div>
+          <div class="instruct-text"><strong>Delete everything</strong> in the text box on screen, then click <strong>Copy</strong> below and paste it in.</div>
+        </div>
+      </div>
+
+      <div class="copy-box">
+        <div class="copy-box-header">
+          <span class="copy-box-label">APP CONFIGURATION — COPY THIS</span>
+          <button class="copy-btn" onclick="copyManifest(this)">Copy</button>
+        </div>
+        <pre id="manifest-text">{
+  "display_information": { "name": "Slack Summarizer" },
+  "features": {
+    "bot_user": { "display_name": "Slack Summarizer", "always_online": false }
+  },
+  "oauth_config": {
+    "scopes": {
+      "bot": [
+        "channels:history", "channels:read",
+        "groups:history",   "groups:read",
+        "im:history",       "im:read", "im:write",
+        "mpim:history",     "mpim:read",
+        "users:read",       "chat:write"
+      ]
+    }
+  },
+  "settings": {
+    "org_deploy_enabled": false,
+    "socket_mode_enabled": false,
+    "token_rotation_enabled": false
+  }
+}</pre>
+      </div>
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">4</div>
+          <div class="instruct-text">Click <strong>Next</strong>, then <strong>Create</strong>. You'll land on your new app's page.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">5</div>
+          <div class="instruct-text">Click <strong>"Install to Workspace"</strong> (or it may say <strong>"Install App"</strong> in the left menu) → click <strong>Allow</strong>.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">6</div>
+          <div class="instruct-text">You'll see a long code starting with <strong>xoxb-</strong>. Copy it and paste it below.</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Paste your Bot Token here</label>
+        <div class="field-sub">It starts with <code style="background:#f0f0f0;padding:1px 5px;border-radius:4px;font-family:monospace;">xoxb-</code></div>
+        <div class="field-input-wrap">
+          <input class="field-input" id="slack-token" type="password"
+            placeholder="xoxb-..." autocomplete="off" oninput="validateToken(this)" />
+          <span class="field-icon" id="icon-token"></span>
+        </div>
+        <div class="field-hint" id="hint-token">Paste the token — it will be hidden for security</div>
+      </div>
+
+      <button class="next-btn" id="btn-1" onclick="goToStep(2)" disabled>
+        Next: Find your Slack ID →
+      </button>
+    </div>
+  </div>
+
+  <!-- ── STEP 2: User ID ── -->
+  <div class="step-card locked" id="card-2">
+    <div class="step-header">
+      <div class="step-num" id="num-2">2</div>
+      <div class="step-info">
+        <div class="step-title">Find your Slack ID</div>
+        <div class="step-desc">So summaries get sent to your Slack messages</div>
+      </div>
+      <span class="step-time">~1 min</span>
+    </div>
+    <div class="step-body">
+
+      <div class="callout">
+        💡 Your Slack ID is a unique code that identifies you. It lets the app know where to send your summaries.
+      </div>
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">1</div>
+          <div class="instruct-text">Click the button below to open Slack in your browser.</div>
+        </div>
+      </div>
+
+      <a class="action-link" href="https://app.slack.com" target="_blank">
+        🔗 Open Slack <span class="arrow">↗</span>
+      </a>
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">2</div>
+          <div class="instruct-text">Click your <strong>name or profile picture</strong> in the top-left corner.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">3</div>
+          <div class="instruct-text">Click <strong>"Profile"</strong>.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">4</div>
+          <div class="instruct-text">Look for the <strong>"⋯" button</strong> (three dots) → click <strong>"Copy member ID"</strong>.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">5</div>
+          <div class="instruct-text">Paste it below.</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Paste your Slack Member ID here</label>
+        <div class="field-sub">Looks like <code style="background:#f0f0f0;padding:1px 5px;border-radius:4px;font-family:monospace;">U01ABC123XY</code></div>
+        <div class="field-input-wrap">
+          <input class="field-input" id="slack-user" type="text"
+            placeholder="U01ABC123XY" autocomplete="off" oninput="validateUserId(this)" />
+          <span class="field-icon" id="icon-user"></span>
+        </div>
+        <div class="field-hint" id="hint-user">Should start with the letter U</div>
+      </div>
+
+      <button class="next-btn" id="btn-2" onclick="goToStep(3)" disabled>
+        Next: Get AI key →
+      </button>
+    </div>
+  </div>
+
+  <!-- ── STEP 3: Anthropic ── -->
+  <div class="step-card locked" id="card-3">
+    <div class="step-header">
+      <div class="step-num" id="num-3">3</div>
+      <div class="step-info">
+        <div class="step-title">Get your AI key</div>
+        <div class="step-desc">This is what powers the smart summaries</div>
+      </div>
+      <span class="step-time">~3 min</span>
+    </div>
+    <div class="step-body">
+
+      <div class="callout">
+        💡 The summaries are written by an AI called Claude. You need a free account to use it. The key is like a password that lets this app use Claude on your behalf.
+      </div>
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">1</div>
+          <div class="instruct-text">Click the button below. Create a free account if you don't have one.</div>
+        </div>
+      </div>
+
+      <a class="action-link" href="https://console.anthropic.com/settings/keys" target="_blank">
+        🔗 Open Anthropic — Get AI Key <span class="arrow">↗</span>
+      </a>
+
+      <div class="instruct">
+        <div class="instruct-row">
+          <div class="instruct-num">2</div>
+          <div class="instruct-text">Click <strong>"Create Key"</strong>. Give it any name (e.g. <em>My Summarizer</em>).</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">3</div>
+          <div class="instruct-text">A long code will appear. <strong>Copy it immediately</strong> — it's only shown once.</div>
+        </div>
+        <div class="instruct-row">
+          <div class="instruct-num">4</div>
+          <div class="instruct-text">Paste it below.</div>
+        </div>
+      </div>
+
+      <div class="field">
+        <label class="field-label">Paste your AI key here</label>
+        <div class="field-sub">Starts with <code style="background:#f0f0f0;padding:1px 5px;border-radius:4px;font-family:monospace;">sk-ant-</code></div>
+        <div class="field-input-wrap">
+          <input class="field-input" id="anthropic-key" type="password"
+            placeholder="sk-ant-..." autocomplete="off" oninput="validateAnthropicKey(this)" />
+          <span class="field-icon" id="icon-anthropic"></span>
+        </div>
+        <div class="field-hint" id="hint-anthropic">Paste the key — it will be hidden for security</div>
+      </div>
+
+      <button class="next-btn" id="btn-3" onclick="showFinal()" disabled>
+        Almost done — verify everything →
+      </button>
+    </div>
+  </div>
+
+  <!-- ── FINAL: Verify & Save ── -->
+  <div id="final-section">
+    <div style="font-size:2.5rem;margin-bottom:10px;">🎉</div>
+    <h2>You're all set — let's verify!</h2>
+    <p class="subtitle">We'll test your credentials and send you a test message on Slack.</p>
+
+    <div class="verify-list">
+      <div class="verify-row" id="vrow-slack">
+        <span class="verify-icon">🤖</span>
+        <span class="verify-label">Slack bot token</span>
+        <span class="verify-status" id="vstatus-slack">waiting…</span>
+      </div>
+      <div class="verify-row" id="vrow-dm">
+        <span class="verify-icon">💬</span>
+        <span class="verify-label">Can send you a DM</span>
+        <span class="verify-status" id="vstatus-dm">waiting…</span>
+      </div>
+      <div class="verify-row" id="vrow-ai">
+        <span class="verify-icon">🧠</span>
+        <span class="verify-label">AI key (Claude)</span>
+        <span class="verify-status" id="vstatus-ai">waiting…</span>
+      </div>
+    </div>
+
+    <div class="status-msg" id="save-status"></div>
+    <button class="connect-btn" id="connect-btn" onclick="saveAndTest()">
+      ✅ Test &amp; Connect Everything
+    </button>
+  </div>
+
+  <!-- ── POST-SETUP: Invite reminder ── -->
+  <div id="invite-reminder">
+    <div style="font-size:2rem;margin-bottom:8px;">✅</div>
+    <h3>One last thing — invite the bot to your channels</h3>
+    <p>The bot can only read channels it's been invited to. In each channel you want summarized, type this and press Enter:</p>
+    <div class="invite-cmd" id="invite-cmd">/invite @Slack Summarizer</div>
+    <p style="font-size:0.82rem;color:var(--muted);margin-top:8px;">Do this for every channel you want included in your summaries.</p>
+    <button class="goto-btn" onclick="window.location.href='/'">
+      Go to the app →
+    </button>
+  </div>
+
+</div>
+
+<script>
+const creds = { token: '', userId: '', anthropicKey: '' };
+
+// ── Step navigation ──────────────────────────────────────────────────────────
+function goToStep(n) {
+  const prev = n - 1;
+  document.getElementById(`card-${prev}`).classList.remove('active');
+  document.getElementById(`card-${prev}`).classList.add('done');
+  document.getElementById(`num-${prev}`).textContent = '✓';
+
+  const next = document.getElementById(`card-${n}`);
+  next.classList.remove('locked');
+  next.classList.add('active');
+  next.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  // Update progress dots
+  for (let i = 1; i <= 3; i++) {
+    const dot = document.getElementById(`dot-${i}`);
+    dot.classList.remove('active', 'done');
+    if (i < n) dot.classList.add('done');
+    else if (i === n) dot.classList.add('active');
+  }
+  document.getElementById('progress-label').textContent = `Step ${n} of 3`;
+}
+
+function showFinal() {
+  document.getElementById('card-3').classList.remove('active');
+  document.getElementById('card-3').classList.add('done');
+  document.getElementById('num-3').textContent = '✓';
+
+  ['dot-1','dot-2','dot-3'].forEach(id => {
+    const d = document.getElementById(id);
+    d.classList.remove('active');
+    d.classList.add('done');
+  });
+  document.getElementById('progress-label').textContent = 'Almost done!';
+
+  const fin = document.getElementById('final-section');
+  fin.style.display = 'block';
+  fin.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+// ── Manifest copy ────────────────────────────────────────────────────────────
+function copyManifest(btn) {
+  const text = document.getElementById('manifest-text').textContent;
+  navigator.clipboard.writeText(text).then(() => {
+    btn.textContent = 'Copied! ✓';
+    btn.classList.add('copied');
+    setTimeout(() => { btn.textContent = 'Copy'; btn.classList.remove('copied'); }, 2500);
+  });
+}
+
+// ── Validation ───────────────────────────────────────────────────────────────
+function validateToken(input) {
+  const val = input.value.trim();
+  creds.token = val;
+  const valid = val.startsWith('xoxb-') && val.length > 20;
+  const hasInput = val.length > 3;
+  input.className = 'field-input' + (valid ? ' valid' : hasInput ? ' invalid' : '');
+  document.getElementById('icon-token').textContent = valid ? '✅' : hasInput ? '❌' : '';
+  document.getElementById('hint-token').textContent = valid
+    ? 'Looks good!'
+    : hasInput ? 'This doesn\'t look right — it should start with xoxb-' : 'Paste the token — it will be hidden for security';
+  document.getElementById('btn-1').disabled = !valid;
+}
+
+function validateUserId(input) {
+  const val = input.value.trim().toUpperCase();
+  input.value = val;
+  creds.userId = val;
+  const valid = /^[UW][A-Z0-9]{6,}$/.test(val);
+  const hasInput = val.length > 2;
+  input.className = 'field-input' + (valid ? ' valid' : hasInput ? ' invalid' : '');
+  document.getElementById('icon-user').textContent = valid ? '✅' : hasInput ? '❌' : '';
+  document.getElementById('hint-user').textContent = valid
+    ? 'Looks good!'
+    : hasInput ? 'Should look like U01ABC123XY — starts with U' : 'Should start with the letter U';
+  document.getElementById('btn-2').disabled = !valid;
+}
+
+function validateAnthropicKey(input) {
+  const val = input.value.trim();
+  creds.anthropicKey = val;
+  const valid = val.startsWith('sk-ant-') && val.length > 20;
+  const hasInput = val.length > 5;
+  input.className = 'field-input' + (valid ? ' valid' : hasInput ? ' invalid' : '');
+  document.getElementById('icon-anthropic').textContent = valid ? '✅' : hasInput ? '❌' : '';
+  document.getElementById('hint-anthropic').textContent = valid
+    ? 'Looks good!'
+    : hasInput ? 'This doesn\'t look right — it should start with sk-ant-' : 'Paste the key — it will be hidden for security';
+  document.getElementById('btn-3').disabled = !valid;
+}
+
+// ── Save & Test ──────────────────────────────────────────────────────────────
+function setVerify(id, statusId, state, msg) {
+  const row = document.getElementById(id);
+  const status = document.getElementById(statusId);
+  row.classList.remove('ok', 'fail');
+  if (state === 'ok') { row.classList.add('ok'); status.textContent = '✓ Connected'; }
+  else if (state === 'fail') { row.classList.add('fail'); status.textContent = '✗ Failed'; }
+  else { status.textContent = msg || 'checking…'; }
+}
+
+async function saveAndTest() {
+  const btn = document.getElementById('connect-btn');
+  const statusEl = document.getElementById('save-status');
+
+  btn.disabled = true;
+  statusEl.className = 'status-msg loading';
+  statusEl.innerHTML = '<div class="spinner"></div><span>Testing — this takes about 10 seconds…</span>';
+
+  setVerify('vrow-slack', 'vstatus-slack', 'pending', 'checking…');
+  setVerify('vrow-dm',    'vstatus-dm',    'pending', 'checking…');
+  setVerify('vrow-ai',    'vstatus-ai',    'pending', 'checking…');
+
+  try {
+    const res = await fetch('/api/setup', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        slackToken: creds.token,
+        slackUserId: creds.userId,
+        anthropicKey: creds.anthropicKey
+      })
+    });
+    const data = await res.json();
+
+    if (data.results?.slack === 'ok')    setVerify('vrow-slack', 'vstatus-slack', 'ok');
+    else if (data.results?.slack)        setVerify('vrow-slack', 'vstatus-slack', 'fail');
+    if (data.results?.dm === 'ok')       setVerify('vrow-dm', 'vstatus-dm', 'ok');
+    else if (data.results?.dm)           setVerify('vrow-dm', 'vstatus-dm', 'fail');
+    if (data.results?.anthropic === 'ok') setVerify('vrow-ai', 'vstatus-ai', 'ok');
+    else if (data.results?.anthropic)    setVerify('vrow-ai', 'vstatus-ai', 'fail');
+
+    if (!res.ok) {
+      statusEl.className = 'status-msg error';
+      statusEl.textContent = '⚠ ' + (data.error || 'Something went wrong. Check the step that failed above.');
+      btn.disabled = false;
+      return;
+    }
+
+    statusEl.className = 'status-msg success';
+    statusEl.textContent = '✅ Everything works! Check your Slack DMs — you should have a test message there.';
+
+    document.getElementById('final-section').style.display = 'none';
+    const reminder = document.getElementById('invite-reminder');
+    reminder.style.display = 'block';
+    reminder.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (e) {
+    statusEl.className = 'status-msg error';
+    statusEl.textContent = '⚠ Could not reach the app server: ' + e.message;
+    btn.disabled = false;
+  }
+}
+</script>
+</body>
+</html>
