@@ -263,7 +263,7 @@ async function fetchDigest({ brandKeys = [], range, withSessions = false, withAd
   const report = { range, brands: ok, noAccess, errored, unknown: [], totals, dailyAll, ccy };
   if (withAds) {
     try { const ma = require('./meta-ads'); ma.attachAds(report, await ma.fetchMetaInsights(range)); }
-    catch (e) { console.error('ads:', e.message); report.ads = { hasData: false }; }
+    catch (e) { console.error('ads:', e.message); report.ads = { hasData: false, error: e.message }; }
   }
   return report;
 }
@@ -312,8 +312,9 @@ function reportLink(text) { const b = process.env.REPORT_BASE_URL; return b ? `$
 // ── Status badge + improvement ideas (data-driven) ──────────────────────────
 // m: { revenue, orders, adSpend, roas, ctr, aov, sessions }
 function healthStatus(m) {
+  if (m.adError) return { emoji: '⚠️', label: 'Ad data unavailable - refresh Meta token', tone: 'warn' };
   if (m.adSpend > 0 && m.revenue === 0) return { emoji: '⛔', label: 'Burning - spend, zero sales', tone: 'bad' };
-  if (m.roas == null) return { emoji: '⚪', label: 'No ads running', tone: 'neutral' };
+  if (m.roas == null) return { emoji: '⚪', label: 'No ads in this range', tone: 'neutral' };
   if (m.roas >= 2.5) return { emoji: '🟢', label: 'Strong - scale it', tone: 'good' };
   if (m.roas >= 1.5) return { emoji: '🟢', label: 'Profitable', tone: 'good' };
   if (m.roas >= 1) return { emoji: '🟡', label: 'Break-even', tone: 'warn' };
@@ -370,7 +371,7 @@ function digestBlocks(report, { link = null } = {}) {
   const single = brands.length === 1;
   const scope = single ? brands[0].brand : `${brands.length} brands`;
   const pct = v => v != null ? v.toFixed(2) + '%' : '—';
-  const aggM = { revenue: totals.revenue, orders: totals.orders, adSpend: a.totalSpend || 0, roas: a.hasData ? a.roas : null, ctr: a.hasData ? a.avgCtr : null, aov: totals.aov, sessions: totals.sessionsKnown ? totals.sessions : null, currency: ccy, bestSeller: totals.bestSeller, topCampaign: a.high, worstCampaign: a.low };
+  const aggM = { revenue: totals.revenue, orders: totals.orders, adSpend: a.totalSpend || 0, roas: a.hasData ? a.roas : null, ctr: a.hasData ? a.avgCtr : null, aov: totals.aov, sessions: totals.sessionsKnown ? totals.sessions : null, currency: ccy, bestSeller: totals.bestSeller, topCampaign: a.high, worstCampaign: a.low, adError: a.error };
   const st = healthStatus(aggM);
   const sessions = totals.sessionsKnown ? fmtNum(totals.sessions) : '—';
   const blocks = [
@@ -459,10 +460,17 @@ function trendBlocks(report, { link = null } = {}) {
 }
 
 // ── Smart sectioned HTML performance report (the "trend" report) ─────────────
+// Single brand → that brand in depth. Multiple brands → COMPARE each brand
+// individually over time (multi-line) + side-by-side bars. Numbers are NEVER summed.
+const PALETTE = ['#ff3b3b', '#36d399', '#7c5cff', '#ffb454', '#4dabf7', '#f06595', '#22b8cf', '#a9e34b', '#ffd43b', '#ff8a4d', '#e599f7', '#63e6be', '#ff6b6b', '#74c0fc', '#b197fc', '#ffa94d'];
+function brandM(b, ccy, adError) {
+  return { revenue: b.revenue, orders: b.orders, adSpend: b.adSpend || 0, roas: b.roas, ctr: b.ctr, aov: b.aov, sessions: b.sessions, currency: b.currency || ccy, bestSeller: b.bestSeller, topCampaign: b.topCampaign, worstCampaign: b.worstCampaign, adError };
+}
 function buildDeepDigestHtml(report) {
   const { range, brands, totals, dailyAll, ccy } = report;
   const ads = report.ads || {};
   const hasAds = !!ads.hasData;
+  const adError = ads.error;
   const single = brands.length === 1;
   const multi = brands.length > 1;
   const scope = single ? brands[0].brand : (brands.length ? `${brands.length} brands` : 'All brands');
@@ -470,88 +478,76 @@ function buildDeepDigestHtml(report) {
   const pct = v => v != null ? v.toFixed(2) + '%' : '—';
   const J = JSON.stringify;
   const esc = s => String(s == null ? '' : s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
-
   const days = Object.keys(dailyAll).sort();
-  const dailyRev = days.map(d => Math.round(dailyAll[d].revenue));
-  const dailyOrd = days.map(d => dailyAll[d].orders);
   const brandNames = brands.map(b => b.brand);
   const brandRev = brands.map(b => Math.round(b.revenue));
   const brandSpend = brands.map(b => Math.round(b.adSpend || 0));
   const brandRoas = brands.map(b => b.roas != null ? +b.roas.toFixed(2) : 0);
   const brandCtr = brands.map(b => b.ctr != null ? +b.ctr.toFixed(2) : 0);
-
-  // status (single brand → that brand; multi → aggregate)
-  const aggM = { revenue: totals.revenue, orders: totals.orders, adSpend: ads.totalSpend || 0, roas: hasAds ? ads.roas : null, ctr: hasAds ? ads.avgCtr : null, aov: totals.aov, sessions: totals.sessionsKnown ? totals.sessions : null, currency: ccy, bestSeller: totals.bestSeller, topCampaign: ads.high, worstCampaign: ads.low };
-  const st = healthStatus(aggM);
-  const statusSummary = hasAds
-    ? `${money(totals.revenue)} revenue on ${money(ads.totalSpend)} ad spend · ROAS ${ads.roas != null ? ads.roas.toFixed(2) + 'x' : '—'} · CTR ${pct(ads.avgCtr)}`
-    : `${money(totals.revenue)} revenue · ${fmtNum(totals.orders)} orders · AOV ${money(totals.aov)}`;
-
-  const kpis = [['Revenue', money(totals.revenue)], ['Orders', fmtNum(totals.orders)], ['AOV', money(totals.aov)], ['Highest order', money(totals.maxOrder)]];
-  if (hasAds) kpis.push(['Ad spend', money(ads.totalSpend)], ['ROAS', ads.roas != null ? ads.roas.toFixed(2) + 'x' : '—'], ['Avg CTR', pct(ads.avgCtr)]);
-  kpis.push(['Sessions', totals.sessionsKnown ? fmtNum(totals.sessions) : 'n/a']);
-  if (multi) kpis.push(['Brands', String(brands.length)]);
-
   const brandW = Math.max(560, brands.length * 78);
-  const dayW = Math.max(560, days.length * 38);
+  const dayW = Math.max(560, days.length * 40);
   const chart = (id, title, minW) => `<div class=card><h2>${title}</h2><div class=scroll><div class=cbox style="min-width:${minW}px"><canvas id=${id}></canvas></div></div><div class=hint>← swipe sideways →</div></div>`;
   const section = (title, inner) => `<div class=sec><div class=sech>${title}</div>${inner}</div>`;
   const cmpLink = c => c ? `<a href="${c.link}" target=_blank>${esc(c.name)}</a> · ${pct(c.ctr)}` : '—';
+  const adNote = adError ? `<div class="status warn"><div class=big>⚠️ Ad data unavailable</div><div class=sm>Meta token expired - revenue/orders shown, ROAS/CTR hidden until it's refreshed.</div></div>` : '';
 
-  // ── SALES section ──
-  let sales = chart('daily', 'Daily revenue', dayW);
-  if (days.length) sales += chart('dailyOrd', 'Daily orders', dayW);
-  if (multi) sales += chart('byBrand', 'Revenue by brand', brandW);
+  let statusBanner = '', kpisHtml = '', body = '', scripts = '';
 
-  // ── ADS section ──
-  let adsSec = '';
-  if (hasAds) {
-    if (multi) {
-      adsSec += chart('roas', 'ROAS by brand (green ≥ 1x · red < 1x)', brandW);
-      adsSec += chart('spendRev', 'Ad spend vs revenue by brand', brandW);
-      adsSec += chart('ctr', 'CTR by brand (%)', brandW);
-    } else if (single) {
-      const c = (brands[0].campaigns || []).filter(x => x.spend > 0);
-      if (c.length) {
-        adsSec += chart('campSpend', 'Spend by campaign', Math.max(560, c.length * 70));
-        adsSec += chart('campCtr', 'CTR by campaign (%)', Math.max(560, c.length * 70));
-      }
-    }
-    // best/worst CTR campaign with links (per brand)
-    const rowsCtr = (multi ? brands : brands).filter(b => b.topCampaign || b.worstCampaign).map(b =>
-      `<tr><td>${esc(b.brand)}</td><td>${cmpLink(b.topCampaign)}</td><td>${cmpLink(b.worstCampaign)}</td></tr>`).join('');
-    if (rowsCtr) adsSec += `<div class=card><h2>Best / worst CTR campaign ${multi ? 'per brand' : ''} (tap to open in Ads Manager)</h2><div class=scroll><table><tr><th>Brand</th><th>▲ Best CTR</th><th>▼ Worst CTR</th></tr>${rowsCtr}</table></div></div>`;
-  }
-
-  // ── BEST SELLERS section ──
-  const tp = (single ? brands[0].topProducts : totals.topProducts) || [];
-  let sellers = '';
-  if (tp.length) {
-    const r = tp.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.title)}</td><td>${fmtNum(p.qty)}</td><td>${money(p.revenue)}</td></tr>`).join('');
-    sellers = `<div class=card><h2>Top products ${single ? '' : '(all brands combined)'}</h2><div class=scroll><table><tr><th>#</th><th>Product</th><th>Units</th><th>Revenue</th></tr>${r}</table></div></div>`;
-  }
-
-  // ── PER-BRAND TABLE (multi only) ──
-  let table = '';
-  if (multi) {
-    const rows = brands.map(b => `<tr><td>${esc(b.brand)}</td><td>${money(b.revenue)}</td><td>${fmtNum(b.orders)}</td><td>${money(b.aov)}</td>`
-      + (hasAds ? `<td>${money(b.adSpend || 0)}</td><td class="${b.roas != null && b.roas >= 1 ? 'pos' : 'neg'}">${b.roas != null ? b.roas.toFixed(2) + 'x' : '—'}</td><td>${b.ctr != null ? b.ctr.toFixed(2) + '%' : '—'}</td>` : '')
-      + `<td>${b.bestSeller ? esc(b.bestSeller.title) : '—'}</td></tr>`).join('');
-    table = `<div class=card><h2>Per-brand breakdown</h2><div class=scroll><table><tr><th>Brand</th><th>Revenue</th><th>Orders</th><th>AOV</th>${hasAds ? '<th>Ad spend</th><th>ROAS</th><th>CTR</th>' : ''}<th>Best seller</th></tr>${rows}</table></div></div>`;
-  }
-
-  // ── RECOMMENDATIONS section ──
-  let recs;
   if (single) {
     const b = brands[0];
-    const m = { revenue: b.revenue, orders: b.orders, adSpend: b.adSpend || 0, roas: b.roas, ctr: b.ctr, aov: b.aov, sessions: b.sessions, currency: b.currency, bestSeller: b.bestSeller, topCampaign: b.topCampaign, worstCampaign: b.worstCampaign };
-    recs = `<ul class=ideas>${improvementIdeas(m).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul>`;
+    const m = brandM(b, ccy, adError);
+    const st = healthStatus(m);
+    const summary = hasAds
+      ? `${money(b.revenue)} revenue on ${money(b.adSpend || 0)} ad spend · ROAS ${b.roas != null ? b.roas.toFixed(2) + 'x' : '—'} · CTR ${pct(b.ctr)}`
+      : `${money(b.revenue)} revenue · ${fmtNum(b.orders)} orders · AOV ${money(b.aov)}`;
+    statusBanner = `<div class="status ${st.tone}"><div class=big>${st.emoji} ${st.label}</div><div class=sm>${summary}</div></div>`;
+    const kpis = [['Revenue', money(b.revenue)], ['Orders', fmtNum(b.orders)], ['AOV', money(b.aov)], ['Highest order', money(b.maxOrder)]];
+    if (hasAds) kpis.push(['Ad spend', money(b.adSpend || 0)], ['ROAS', b.roas != null ? b.roas.toFixed(2) + 'x' : '—'], ['CTR', pct(b.ctr)]);
+    kpis.push(['Sessions', b.sessions != null ? fmtNum(b.sessions) : 'n/a']);
+    kpisHtml = `<div class=kpis>${kpis.map(([l, v]) => `<div class=kpi><div class=l>${l}</div><div class=v>${v}</div></div>`).join('')}</div>`;
+
+    let sales = chart('daily', 'Revenue over time', dayW) + chart('dailyOrd', 'Orders over time', dayW);
+    body += section('Sales', sales);
+    if (hasAds) {
+      let a = '';
+      const cs = (b.campaigns || []).filter(x => x.spend > 0);
+      if (cs.length) a += chart('campSpend', 'Spend by campaign', Math.max(560, cs.length * 70)) + chart('campCtr', 'CTR by campaign (%)', Math.max(560, cs.length * 70));
+      if (b.topCampaign || b.worstCampaign) a += `<div class=card><h2>Best / worst CTR campaign (tap to open in Ads Manager)</h2><table><tr><th>▲ Best CTR</th><td>${cmpLink(b.topCampaign)}</td></tr><tr><th>▼ Worst CTR</th><td>${cmpLink(b.worstCampaign)}</td></tr></table></div>`;
+      body += section('Ads &amp; ROAS', a);
+    }
+    const tp = b.topProducts || [];
+    if (tp.length) body += section('Best sellers', `<div class=card><div class=scroll><table><tr><th>#</th><th>Product</th><th>Units</th><th>Revenue</th></tr>${tp.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.title)}</td><td>${fmtNum(p.qty)}</td><td>${money(p.revenue)}</td></tr>`).join('')}</table></div></div>`);
+    body += section('💡 How to improve', `<div class=card><ul class=ideas>${improvementIdeas(m).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul></div>`);
+
+    scripts = `new Chart(daily,{type:'line',data:{labels:${J(days)},datasets:[{data:${J(days.map(d => Math.round(dailyAll[d].revenue)))},borderColor:'#ff8a4d',backgroundColor:'rgba(255,138,77,.15)',fill:true,tension:.3,pointRadius:2}]},options:ax(false)});`
+      + `new Chart(dailyOrd,{type:'bar',data:{labels:${J(days)},datasets:[{data:${J(days.map(d => dailyAll[d].orders))},backgroundColor:'#7c5cff',borderRadius:4}]},options:ax(false)});`;
+    if (hasAds) { const cs = (b.campaigns || []).filter(x => x.spend > 0); if (cs.length) { const lbl = cs.map(x => x.name); scripts += `new Chart(campSpend,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(cs.map(x => Math.round(x.spend)))},backgroundColor:'#7c5cff',borderRadius:5}]},options:ax(false)});new Chart(campCtr,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(cs.map(x => +x.ctr.toFixed(2)))},backgroundColor:'#ffb454',borderRadius:5}]},options:ax(false)});`; } }
   } else {
-    recs = brands.slice(0, 8).map(b => {
-      const m = { revenue: b.revenue, orders: b.orders, adSpend: b.adSpend || 0, roas: b.roas, ctr: b.ctr, aov: b.aov, sessions: b.sessions, currency: b.currency, bestSeller: b.bestSeller, topCampaign: b.topCampaign, worstCampaign: b.worstCampaign };
-      const s = healthStatus(m);
-      return `<div class=brec><div class=brh>${s.emoji} ${esc(b.brand)} <span class=bmut>${s.label}</span></div><ul class=ideas>${improvementIdeas(m).slice(0, 2).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul></div>`;
-    }).join('');
+    // ── MULTI: per-brand comparison, never combined ──
+    statusBanner = adNote;
+    // per-brand revenue over time (one line per brand)
+    const revSets = brands.map((b, i) => `{label:${J(b.brand)},data:${J(days.map(d => Math.round((b.daily && b.daily[d] && b.daily[d].revenue) || 0)))},borderColor:'${PALETTE[i % PALETTE.length]}',backgroundColor:'transparent',borderWidth:2,tension:.3,pointRadius:0}`).join(',');
+    body += section('Performance over time (per brand)', chart('revLines', 'Revenue by brand over time', dayW));
+    let cmp = chart('byBrand', 'Total revenue by brand', brandW);
+    if (hasAds) cmp += chart('roas', 'ROAS by brand (green ≥ 1x · red < 1x)', brandW) + chart('spendRev', 'Ad spend vs revenue by brand', brandW) + chart('ctr', 'CTR by brand (%)', brandW);
+    body += section('Brand comparison', cmp);
+    // per-brand table (individual numbers)
+    const rows = brands.map(b => { const s = healthStatus(brandM(b, ccy, adError)); return `<tr><td>${s.emoji} ${esc(b.brand)}</td><td>${money(b.revenue)}</td><td>${fmtNum(b.orders)}</td><td>${money(b.aov)}</td>`
+      + (hasAds ? `<td>${money(b.adSpend || 0)}</td><td class="${b.roas != null && b.roas >= 1 ? 'pos' : 'neg'}">${b.roas != null ? b.roas.toFixed(2) + 'x' : '—'}</td><td>${b.ctr != null ? b.ctr.toFixed(2) + '%' : '—'}</td>` : '')
+      + `<td>${b.bestSeller ? esc(b.bestSeller.title) : '—'}</td></tr>`; }).join('');
+    body += section('Per-brand numbers', `<div class=card><div class=scroll><table><tr><th>Brand</th><th>Revenue</th><th>Orders</th><th>AOV</th>${hasAds ? '<th>Ad spend</th><th>ROAS</th><th>CTR</th>' : ''}<th>Best seller</th></tr>${rows}</table></div></div>`);
+    if (hasAds) {
+      const rc = brands.filter(b => b.topCampaign || b.worstCampaign).map(b => `<tr><td>${esc(b.brand)}</td><td>${cmpLink(b.topCampaign)}</td><td>${cmpLink(b.worstCampaign)}</td></tr>`).join('');
+      if (rc) body += section('Best / worst CTR campaign per brand', `<div class=card><div class=scroll><table><tr><th>Brand</th><th>▲ Best CTR</th><th>▼ Worst CTR</th></tr>${rc}</table></div></div>`);
+    }
+    const recs = brands.map(b => { const m = brandM(b, ccy, adError); const s = healthStatus(m); return `<div class=brec><div class=brh>${s.emoji} ${esc(b.brand)} <span class=bmut>${s.label}</span></div><ul class=ideas>${improvementIdeas(m).slice(0, 2).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul></div>`; }).join('');
+    body += section('💡 How to improve (per brand)', recs);
+
+    scripts = `new Chart(revLines,{type:'line',data:{labels:${J(days)},datasets:[${revSets}]},options:ax(true)});`
+      + `new Chart(byBrand,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRev)},backgroundColor:${J(brands.map((b, i) => PALETTE[i % PALETTE.length]))},borderRadius:6}]},options:ax(false)});`;
+    if (hasAds) scripts += `new Chart(roas,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRoas)},backgroundColor:${J(brandRoas.map(v => v >= 1 ? '#36d399' : '#ff5a5a'))},borderRadius:6}]},options:ax(false)});`
+      + `new Chart(spendRev,{type:'bar',data:{labels:${J(brandNames)},datasets:[{label:'Ad spend',data:${J(brandSpend)},backgroundColor:'#7c5cff',borderRadius:5},{label:'Revenue',data:${J(brandRev)},backgroundColor:'#36d399',borderRadius:5}]},options:ax(true)});`
+      + `new Chart(ctr,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandCtr)},backgroundColor:'#ffb454',borderRadius:6}]},options:ax(false)});`;
   }
 
   return `<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
@@ -568,6 +564,7 @@ h1{font:800 24px/1.1 'Helvetica Neue',Arial;margin:0 0 3px;text-transform:upperc
 .status.good{background:linear-gradient(120deg,rgba(54,211,153,.16),rgba(54,211,153,.04));border-color:rgba(54,211,153,.4)}
 .status.warn{background:linear-gradient(120deg,rgba(255,209,102,.16),rgba(255,209,102,.04));border-color:rgba(255,209,102,.4)}
 .status.bad{background:linear-gradient(120deg,rgba(255,90,90,.16),rgba(255,90,90,.04));border-color:rgba(255,90,90,.4)}
+.status.neutral{background:var(--panel)}
 .status .big{font:800 22px/1.15 'Helvetica Neue',Arial}
 .status .sm{color:var(--mut);font-size:13px;margin-top:4px}
 .kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
@@ -582,7 +579,7 @@ h1{font:800 24px/1.1 'Helvetica Neue',Arial;margin:0 0 3px;text-transform:upperc
 .card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:0 0 12px}
 .scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-radius:10px}
 .scroll::-webkit-scrollbar{height:8px}.scroll::-webkit-scrollbar-thumb{background:#34343f;border-radius:8px}
-.cbox{position:relative;height:300px}@media(max-width:560px){.cbox{height:260px}}
+.cbox{position:relative;height:320px}@media(max-width:560px){.cbox{height:270px}}
 .hint{display:none;color:var(--mut);font-size:11px;margin-top:8px;text-align:center}
 @media(max-width:760px){.hint{display:block}}
 .scroll table{min-width:560px}
@@ -598,25 +595,15 @@ a{color:#7cb8ff;text-decoration:none}a:hover{text-decoration:underline}
 .foot{color:var(--mut);font-size:12px;margin-top:22px}
 </style></head><body><div class=wrap>
 <h1>${esc(scope)} report</h1>
-<div class=sub>${esc(range.label)} &nbsp;·&nbsp; generated ${toIST()} IST</div>
-<div class="status ${st.tone}"><div class=big>${st.emoji} ${st.label}</div><div class=sm>${statusSummary}</div></div>
-<div class=kpis>${kpis.map(([l, v]) => `<div class=kpi><div class=l>${l}</div><div class=v>${v}</div></div>`).join('')}</div>
-${section('Sales', sales)}
-${hasAds ? section('Ads &amp; ROAS', adsSec) : ''}
-${sellers ? section('Best sellers', sellers) : ''}
-${multi ? section('Per-brand breakdown', table) : ''}
-${section('💡 How to improve', recs)}
-<div class=foot>${hasAds ? 'Ad spend / ROAS / CTR from Meta, brand-named campaigns only (shared catalog ad excluded). ROAS = revenue ÷ ad spend. ' : ''}${totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}Brand Sales bot.</div>
+<div class=sub>${esc(range.label)} &nbsp;·&nbsp; generated ${toIST()} IST${multi ? ' &nbsp;·&nbsp; each brand shown separately, never combined' : ''}</div>
+${statusBanner}
+${kpisHtml}
+${body}
+<div class=foot>${hasAds ? 'Ad spend / ROAS / CTR from Meta, brand-named campaigns only (shared catalog ad excluded). ROAS = revenue ÷ ad spend. ' : ''}${report.totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}Brand Sales bot.</div>
 <script>
 const C={grid:'#1f1f27',tick:'#9a9aa3'};
-const ax=(leg)=>({maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},scales:{x:{ticks:{color:C.tick,maxRotation:60,minRotation:0,autoSkip:false},grid:{color:C.grid}},y:{beginAtZero:true,ticks:{color:C.tick},grid:{color:C.grid}}},plugins:{legend:{display:!!leg,labels:{color:C.tick}}}});
-new Chart(daily,{type:'line',data:{labels:${J(days)},datasets:[{data:${J(dailyRev)},borderColor:'#ff8a4d',backgroundColor:'rgba(255,138,77,.15)',fill:true,tension:.3,pointRadius:2}]},options:ax(false)});
-${days.length ? `new Chart(dailyOrd,{type:'bar',data:{labels:${J(days)},datasets:[{data:${J(dailyOrd)},backgroundColor:'#7c5cff',borderRadius:4}]},options:ax(false)});` : ''}
-${multi ? `new Chart(byBrand,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRev)},backgroundColor:'#ff3b3b',borderRadius:6}]},options:ax(false)});` : ''}
-${multi && hasAds ? `new Chart(roas,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRoas)},backgroundColor:${J(brandRoas.map(v => v >= 1 ? '#36d399' : '#ff5a5a'))},borderRadius:6}]},options:ax(false)});` : ''}
-${multi && hasAds ? `new Chart(spendRev,{type:'bar',data:{labels:${J(brandNames)},datasets:[{label:'Ad spend',data:${J(brandSpend)},backgroundColor:'#7c5cff',borderRadius:5},{label:'Revenue',data:${J(brandRev)},backgroundColor:'#36d399',borderRadius:5}]},options:ax(true)});` : ''}
-${multi && hasAds ? `new Chart(ctr,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandCtr)},backgroundColor:'#ffb454',borderRadius:6}]},options:ax(false)});` : ''}
-${single && hasAds && (brands[0].campaigns || []).filter(x => x.spend > 0).length ? (() => { const c = brands[0].campaigns.filter(x => x.spend > 0); const lbl = c.map(x => x.name); return `new Chart(campSpend,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(c.map(x => Math.round(x.spend)))},backgroundColor:'#7c5cff',borderRadius:5}]},options:ax(false)});new Chart(campCtr,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(c.map(x => +x.ctr.toFixed(2)))},backgroundColor:'#ffb454',borderRadius:5}]},options:ax(false)});`; })() : ''}
+const ax=(leg)=>({maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},scales:{x:{ticks:{color:C.tick,maxRotation:60,minRotation:0,autoSkip:false},grid:{color:C.grid}},y:{beginAtZero:true,ticks:{color:C.tick},grid:{color:C.grid}}},plugins:{legend:{display:!!leg,labels:{color:C.tick,boxWidth:12}}}});
+${scripts}
 </script></div></body></html>`;
 }
 
