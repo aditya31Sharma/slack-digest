@@ -83,7 +83,7 @@ async function startBolt() {
     if (cmd) {
       const thinking = await client.chat.postMessage({ channel: message.channel, text: cmd.kind === 'deepdigest' ? '⏳ Building deep digest…' : cmd.kind === 'trend' ? '⏳ Crunching trend…' : '⏳ Pulling digest…' });
       try {
-        const report = await fetchDigest({ brandKeys: cmd.brandKeys, range: cmd.range, withSessions: cmd.kind !== 'trend' });
+        const report = await fetchDigest({ brandKeys: cmd.brandKeys, range: cmd.range, withSessions: cmd.kind !== 'trend', withAds: true });
         report.unknown = cmd.unknown;
         const link = reportLink(text);
         if (cmd.kind === 'trend') {
@@ -132,7 +132,7 @@ function startScheduler() {
     try {
       const client = new WebClient(process.env.SLACK_BOT_TOKEN);
       console.log(`⏰  Daily digest at ${toIST()} (yesterday)`);
-      const report = await fetchDigest({ brandKeys: [], range: resolveRange('yesterday'), withSessions: true });
+      const report = await fetchDigest({ brandKeys: [], range: resolveRange('yesterday'), withSessions: true, withAds: true });
       await client.chat.postMessage({ channel: process.env.SLACK_USER_ID, blocks: digestBlocks(report), text: 'Daily brand digest' });
     } catch (e) { console.error('scheduler:', e.message); }
   }, { timezone: 'Asia/Kolkata' });
@@ -153,7 +153,7 @@ webApp.get('/report', async (req, res) => {
   try {
     const cmd = parseCommand(req.query.q || '');
     if (!cmd) return res.status(400).type('text').send('Add ?q=<command>, e.g. ?q=myugen deepdigest 30d');
-    const report = await fetchDigest({ brandKeys: cmd.brandKeys, range: cmd.range, withSessions: true });
+    const report = await fetchDigest({ brandKeys: cmd.brandKeys, range: cmd.range, withSessions: true, withAds: true });
     report.unknown = cmd.unknown;
     res.type('html').send(buildDeepDigestHtml(report));
   } catch (e) { res.status(500).type('text').send('error: ' + e.message); }

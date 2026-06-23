@@ -1,4 +1,8 @@
 .env
+stores.env
+meta-test.js
+meta-probe.js
+meta-roas.js
 node_modules/
 data/state.json
 *.log
