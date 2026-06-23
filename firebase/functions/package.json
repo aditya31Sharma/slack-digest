@@ -1,0 +1,13 @@
+{
+  "name": "brand-sales-functions",
+  "description": "Brand sales Slack bot — scheduled daily digest + slash commands",
+  "main": "index.js",
+  "engines": { "node": "20" },
+  "dependencies": {
+    "@slack/bolt": "^3.18.0",
+    "@slack/web-api": "^7.0.4",
+    "firebase-admin": "^12.1.0",
+    "firebase-functions": "^5.0.1"
+  },
+  "private": true
+}
