@@ -491,6 +491,19 @@ function buildDeepDigestHtml(report) {
   const cmpLink = c => c ? `<a href="${c.link}" target=_blank>${esc(c.name)}</a> · ${pct(c.ctr)}` : '—';
   const adNote = adError ? `<div class="status warn"><div class=big>⚠️ Ad data unavailable</div><div class=sm>Meta token expired - revenue/orders shown, ROAS/CTR hidden until it's refreshed.</div></div>` : '';
 
+  // ── per-brand ad-spend-vs-revenue over time (one chart per brand in scope) ──
+  let svrSection = '', svrScripts = '';
+  if (hasAds) {
+    const list = brands.slice(0, 12);
+    svrSection = list.map((b, i) => chart('svr' + i, esc(b.brand) + ' — ad spend vs revenue', dayW)).join('');
+    if (brands.length > 12) svrSection += `<div class=card><div style="color:var(--mut);font-size:12px">Showing first 12 brands - name fewer brands to see the rest.</div></div>`;
+    svrScripts = list.map((b, i) => {
+      const rev = days.map(d => Math.round((b.daily && b.daily[d] && b.daily[d].revenue) || 0));
+      const spd = days.map(d => Math.round((b.dailySpend && b.dailySpend[d]) || 0));
+      return `new Chart(svr${i},{type:'line',data:{labels:${J(days)},datasets:[{label:'Revenue',data:${J(rev)},borderColor:'#36d399',backgroundColor:'rgba(54,211,153,.12)',fill:true,tension:.3,pointRadius:0},{label:'Ad spend',data:${J(spd)},borderColor:'#7c5cff',backgroundColor:'transparent',borderWidth:2,tension:.3,pointRadius:0}]},options:ax(true)});`;
+    }).join('');
+  }
+
   let statusBanner = '', kpisHtml = '', body = '', scripts = '';
 
   if (single) {
@@ -515,6 +528,7 @@ function buildDeepDigestHtml(report) {
       if (b.topCampaign || b.worstCampaign) a += `<div class=card><h2>Best / worst CTR campaign (tap to open in Ads Manager)</h2><table><tr><th>▲ Best CTR</th><td>${cmpLink(b.topCampaign)}</td></tr><tr><th>▼ Worst CTR</th><td>${cmpLink(b.worstCampaign)}</td></tr></table></div>`;
       body += section('Ads &amp; ROAS', a);
     }
+    if (svrSection) body += section('Ad spend vs revenue over time', svrSection);
     const tp = b.topProducts || [];
     if (tp.length) body += section('Best sellers', `<div class=card><div class=scroll><table><tr><th>#</th><th>Product</th><th>Units</th><th>Revenue</th></tr>${tp.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.title)}</td><td>${fmtNum(p.qty)}</td><td>${money(p.revenue)}</td></tr>`).join('')}</table></div></div>`);
     body += section('💡 How to improve', `<div class=card><ul class=ideas>${improvementIdeas(m).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul></div>`);
@@ -522,6 +536,7 @@ function buildDeepDigestHtml(report) {
     scripts = `new Chart(daily,{type:'line',data:{labels:${J(days)},datasets:[{data:${J(days.map(d => Math.round(dailyAll[d].revenue)))},borderColor:'#ff8a4d',backgroundColor:'rgba(255,138,77,.15)',fill:true,tension:.3,pointRadius:2}]},options:ax(false)});`
       + `new Chart(dailyOrd,{type:'bar',data:{labels:${J(days)},datasets:[{data:${J(days.map(d => dailyAll[d].orders))},backgroundColor:'#7c5cff',borderRadius:4}]},options:ax(false)});`;
     if (hasAds) { const cs = (b.campaigns || []).filter(x => x.spend > 0); if (cs.length) { const lbl = cs.map(x => x.name); scripts += `new Chart(campSpend,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(cs.map(x => Math.round(x.spend)))},backgroundColor:'#7c5cff',borderRadius:5}]},options:ax(false)});new Chart(campCtr,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(cs.map(x => +x.ctr.toFixed(2)))},backgroundColor:'#ffb454',borderRadius:5}]},options:ax(false)});`; } }
+    scripts += svrScripts;
   } else {
     // ── MULTI: per-brand comparison, never combined ──
     statusBanner = adNote;
@@ -531,6 +546,7 @@ function buildDeepDigestHtml(report) {
     let cmp = chart('byBrand', 'Total revenue by brand', brandW);
     if (hasAds) cmp += chart('roas', 'ROAS by brand (green ≥ 1x · red < 1x)', brandW) + chart('spendRev', 'Ad spend vs revenue by brand', brandW) + chart('ctr', 'CTR by brand (%)', brandW);
     body += section('Brand comparison', cmp);
+    if (svrSection) body += section('Ad spend vs revenue (per brand, over time)', svrSection);
     // per-brand table (individual numbers)
     const rows = brands.map(b => { const s = healthStatus(brandM(b, ccy, adError)); return `<tr><td>${s.emoji} ${esc(b.brand)}</td><td>${money(b.revenue)}</td><td>${fmtNum(b.orders)}</td><td>${money(b.aov)}</td>`
       + (hasAds ? `<td>${money(b.adSpend || 0)}</td><td class="${b.roas != null && b.roas >= 1 ? 'pos' : 'neg'}">${b.roas != null ? b.roas.toFixed(2) + 'x' : '—'}</td><td>${b.ctr != null ? b.ctr.toFixed(2) + '%' : '—'}</td>` : '')
@@ -548,6 +564,7 @@ function buildDeepDigestHtml(report) {
     if (hasAds) scripts += `new Chart(roas,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRoas)},backgroundColor:${J(brandRoas.map(v => v >= 1 ? '#36d399' : '#ff5a5a'))},borderRadius:6}]},options:ax(false)});`
       + `new Chart(spendRev,{type:'bar',data:{labels:${J(brandNames)},datasets:[{label:'Ad spend',data:${J(brandSpend)},backgroundColor:'#7c5cff',borderRadius:5},{label:'Revenue',data:${J(brandRev)},backgroundColor:'#36d399',borderRadius:5}]},options:ax(true)});`
       + `new Chart(ctr,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandCtr)},backgroundColor:'#ffb454',borderRadius:6}]},options:ax(false)});`;
+    scripts += svrScripts;
   }
 
   return `<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">

@@ -53,21 +53,28 @@ async function fetchMetaInsights(range) {
   const since = range && range.from ? ymd(range.from) : '2023-01-01';
   const until = ymd(new Date((range && range.to ? range.to.getTime() : Date.now()) - 1));
   const tr = encodeURIComponent(JSON.stringify({ since, until }));
+  // time_increment=1 → one row per campaign per day, so we get daily spend per brand
   const url = `https://graph.facebook.com/v21.0/${AD_ACCOUNT()}/insights`
-    + `?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${tr}&limit=300&access_token=${TOKEN}`;
+    + `?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${tr}&time_increment=1&limit=500&access_token=${TOKEN}`;
   const rows = await getAll(url);
   const byBrand = {}; const account = { spend: 0, clicks: 0, impr: 0 };
+  const campAgg = {}; // brandKey -> { campaignId -> {id,name,link,spend,clicks,impr} }
   for (const r of rows) {
     const sp = parseFloat(r.spend || 0), cl = parseInt(r.clicks || 0), im = parseInt(r.impressions || 0);
+    const date = r.date_start;
     account.spend += sp; account.clicks += cl; account.impr += im;
     const k = matchBrand(r.campaign_name);
     if (!k) continue;
-    const b = byBrand[k] || (byBrand[k] = { spend: 0, clicks: 0, impr: 0, campaigns: [] });
+    const b = byBrand[k] || (byBrand[k] = { spend: 0, clicks: 0, impr: 0, dailySpend: {} });
     b.spend += sp; b.clicks += cl; b.impr += im;
-    b.campaigns.push({ id: r.campaign_id, name: r.campaign_name, link: campaignLink(r.campaign_id), spend: sp, clicks: cl, impr: im, ctr: im ? cl / im * 100 : 0 });
+    if (date) b.dailySpend[date] = (b.dailySpend[date] || 0) + sp;
+    const cb = campAgg[k] || (campAgg[k] = {});
+    const c = cb[r.campaign_id] || (cb[r.campaign_id] = { id: r.campaign_id, name: r.campaign_name, link: campaignLink(r.campaign_id), spend: 0, clicks: 0, impr: 0 });
+    c.spend += sp; c.clicks += cl; c.impr += im;
   }
   for (const k in byBrand) {
     const b = byBrand[k]; b.ctr = b.impr ? b.clicks / b.impr * 100 : 0;
+    b.campaigns = Object.values(campAgg[k] || {}).map(c => ({ ...c, ctr: c.impr ? c.clicks / c.impr * 100 : 0 }));
     // highest / lowest CTR campaign for this brand (ignore tiny-impression noise)
     const elig = b.campaigns.filter(c => c.impr >= MIN_IMPR);
     const pool = elig.length ? elig : b.campaigns;
@@ -91,6 +98,7 @@ function attachAds(report, ins) {
     b.topCampaign = a && a.high ? a.high : null;   // highest-CTR campaign (with link)
     b.worstCampaign = a && a.low ? a.low : null;   // lowest-CTR campaign (with link)
     b.campaigns = a ? a.campaigns : [];            // full campaign list (for single-brand views)
+    b.dailySpend = a ? a.dailySpend : {};          // {date: spend} for spend-vs-revenue-over-time
   }
   const totalSpend = scope.reduce((s, b) => s + (b.adSpend || 0), 0);
   const totalClicks = scope.reduce((s, b) => s + (b.adClicks || 0), 0);
