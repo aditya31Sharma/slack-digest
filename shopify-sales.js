@@ -11,18 +11,27 @@ const API_VERSION = '2024-10';
 // ── Load store credentials ──────────────────────────────────────────────────
 const SHOPIFY_FIELDS = ['ACCESS_TOKEN', 'DOMAIN', 'CLIENT_ID', 'CLIENT_SECRET'];
 const isShopifyKey = k => SHOPIFY_FIELDS.some(f => k.endsWith('_SHOPIFY_' + f));
+function parseEnvText(text, src) {
+  for (const line of text.split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#') || !t.includes('=')) continue;
+    const i = t.indexOf('='); const k = t.slice(0, i).trim(), v = t.slice(i + 1).trim();
+    if (isShopifyKey(k)) src[k] = v;
+  }
+}
 function loadStores() {
   const src = {};
-  for (const [k, v] of Object.entries(process.env)) if (isShopifyKey(k)) src[k] = v;
-  // fall back to a local env file only if nothing is set in the environment
-  if (!Object.keys(src).length) {
-    const path = fs.existsSync(SHOPIFY_ENV_PATH) ? SHOPIFY_ENV_PATH
-      : (fs.existsSync(__dirname + '/stores.env') ? __dirname + '/stores.env' : null);
-    if (path) for (const line of fs.readFileSync(path, 'utf8').split('\n')) {
-      const t = line.trim();
-      if (!t || t.startsWith('#') || !t.includes('=')) continue;
-      const i = t.indexOf('='); const k = t.slice(0, i).trim(), v = t.slice(i + 1).trim();
-      if (isShopifyKey(k)) src[k] = v;
+  // 1) one base64-encoded env blob (STORES_ENV_B64) is the simplest deploy: all creds in one var
+  if (process.env.STORES_ENV_B64) {
+    try { parseEnvText(Buffer.from(process.env.STORES_ENV_B64, 'base64').toString('utf8'), src); } catch { /* ignore */ }
+  } else {
+    // 2) individual *_SHOPIFY_* env vars
+    for (const [k, v] of Object.entries(process.env)) if (isShopifyKey(k)) src[k] = v;
+    // 3) fall back to a local env file only if nothing is set
+    if (!Object.keys(src).length) {
+      const path = fs.existsSync(SHOPIFY_ENV_PATH) ? SHOPIFY_ENV_PATH
+        : (fs.existsSync(__dirname + '/stores.env') ? __dirname + '/stores.env' : null);
+      if (path) parseEnvText(fs.readFileSync(path, 'utf8'), src);
     }
   }
   const names = new Set();
