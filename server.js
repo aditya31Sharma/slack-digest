@@ -74,32 +74,29 @@ async function startBolt() {
     }
     if (/\b(brands?|stores?|list)\b/.test(text) && !/sales|digest|today|month|day|week|\d/.test(text)) {
       const names = Object.keys(loadStores()).map(k => `/${slugify(k)}`).sort();
-      await client.chat.postMessage({ channel: message.channel, text: `*${names.length} brand commands:*\n${names.join('  ·  ')}\n\nDigest syntax: \`{brands} digest|deepdigest {date/range}\`\ne.g. \`digest\` · \`myugen digest\` · \`{myugen,kaand} digest 30d\` · \`digest 10.06.26-20.06.26\` · \`{myugen,alankoch} deepdigest {05.04.26-20.06.26}\`` });
+      await client.chat.postMessage({ channel: message.channel, text: `*${names.length} brand commands:*\n${names.join('  ·  ')}\n\n\`digest\` = quick numbers · \`trend\` = full visual report\ne.g. \`myugen digest\` · \`{myugen,kaand} digest 30d\` · \`myugen trend 30d\` · \`{myugen,voyd} trend {01.06.26-23.06.26}\`` });
       return;
     }
 
-    // ── digest / deepdigest grammar:  [{brand(s)} digest|deepdigest {date/range}] ──
+    // ── grammar:  digest = Slack summary  ·  trend = visual HTML report link ──
     const cmd = parseCommand(text);
     if (cmd) {
-      const thinking = await client.chat.postMessage({ channel: message.channel, text: cmd.kind === 'deepdigest' ? '⏳ Building deep digest…' : cmd.kind === 'trend' ? '⏳ Crunching trend…' : '⏳ Pulling digest…' });
+      const thinking = await client.chat.postMessage({ channel: message.channel, text: cmd.kind === 'trend' ? '⏳ Building report…' : '⏳ Pulling digest…' });
       try {
-        const report = await fetchDigest({ brandKeys: cmd.brandKeys, range: cmd.range, withSessions: cmd.kind !== 'trend', withAds: true });
+        const report = await fetchDigest({ brandKeys: cmd.brandKeys, range: cmd.range, withSessions: true, withAds: true });
         report.unknown = cmd.unknown;
         const link = reportLink(text);
         if (cmd.kind === 'trend') {
-          await client.chat.postMessage({ channel: message.channel, blocks: trendBlocks(report, { link }), text: `Trend — ${cmd.range.label}` });
+          // visual report: Slack summary (with link) + the HTML report at the link
+          await client.chat.postMessage({ channel: message.channel, blocks: digestBlocks(report, { link }), text: `Report — ${cmd.range.label}` });
+          if (!link) {
+            const file = `/tmp/report-${Date.now()}.html`;
+            fs.writeFileSync(file, buildDeepDigestHtml(report));
+            try { await client.files.uploadV2({ channel_id: message.channel, file, filename: `report-${cmd.range.label.replace(/[^\w]+/g, '-')}.html`, title: `Report · ${cmd.range.label}`, initial_comment: '📎 Open in a browser for the full visual report.' }); }
+            catch { await client.chat.postMessage({ channel: message.channel, text: '📄 Report built but a link needs REPORT_BASE_URL and upload needs files:write.' }); }
+          }
         } else {
           await client.chat.postMessage({ channel: message.channel, blocks: digestBlocks(report), text: `Digest — ${cmd.range.label}` });
-          if (cmd.kind === 'deepdigest') {
-            if (link) {
-              await client.chat.postMessage({ channel: message.channel, text: `📊 Interactive report (open on any device): ${link}` });
-            } else {
-              const file = `/tmp/deepdigest-${Date.now()}.html`;
-              fs.writeFileSync(file, buildDeepDigestHtml(report));
-              try { await client.files.uploadV2({ channel_id: message.channel, file, filename: `deepdigest-${cmd.range.label.replace(/[^\w]+/g, '-')}.html`, title: `Deep digest · ${cmd.range.label}`, initial_comment: '📎 Open in a browser for the interactive charts.' }); }
-              catch { await client.chat.postMessage({ channel: message.channel, text: '📄 HTML report built but upload needs the *files:write* scope.' }); }
-            }
-          }
         }
         await client.chat.delete({ channel: message.channel, ts: thinking.ts });
       } catch (e) {

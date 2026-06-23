@@ -137,15 +137,16 @@ function resolveRange(text) {
 // ── Command parser:  [{brand(s)} digest|deepdigest {date/range}] ─────────────
 function parseCommand(raw) {
   const lower = (raw || '').toLowerCase();
-  let kind = null;
-  if (lower.includes('deepdigest')) kind = 'deepdigest';
-  else if (lower.includes('trend')) kind = 'trend';
-  else if (lower.includes('digest')) kind = 'digest';
+  // trend + deepdigest are merged: both produce the visual HTML report.
+  let kw = null, kind = null;
+  if (lower.includes('deepdigest')) { kw = 'deepdigest'; kind = 'trend'; }
+  else if (lower.includes('trend')) { kw = 'trend'; kind = 'trend'; }
+  else if (lower.includes('digest')) { kw = 'digest'; kind = 'digest'; }
   if (!kind) return null;
 
-  const idx = lower.indexOf(kind);
+  const idx = lower.indexOf(kw);
   let before = lower.slice(0, idx).replace(/[{}]/g, ' ').trim();
-  let after = lower.slice(idx + kind.length).replace(/[{}]/g, ' ').trim();
+  let after = lower.slice(idx + kw.length).replace(/[{}]/g, ' ').trim();
 
   const brandKeys = [], unknown = [];
   if (before) {
@@ -166,12 +167,12 @@ async function storeMetrics(store, range) {
   let token;
   try { token = await resolveToken(store); } catch (e) { return { error: 'auth_failed' }; }
   if (!token) return { error: 'no_token' };
-  const params = new URLSearchParams({ status: 'any', limit: '250', fields: 'id,total_price,financial_status,cancelled_at,currency,created_at' });
+  const params = new URLSearchParams({ status: 'any', limit: '250', fields: 'id,total_price,financial_status,cancelled_at,currency,created_at,line_items' });
   if (range.from) params.set('created_at_min', range.from.toISOString());
   if (range.to) params.set('created_at_max', range.to.toISOString());
   let url = `orders.json?${params.toString()}`;
   let orders = 0, revenue = 0, maxOrder = 0, currency = 'INR', guard = 0;
-  const daily = {};
+  const daily = {}; const products = {}; // title -> { qty, revenue }
   while (url && guard++ < 400) {
     const res = await apiGet(domain, token, url);
     if (res.status === 403 || res.status === 401) return { error: 'no_orders_scope' };
@@ -186,12 +187,21 @@ async function storeMetrics(store, range) {
       const day = new Date(o.created_at).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
       daily[day] = daily[day] || { revenue: 0, orders: 0 };
       daily[day].revenue += amt; daily[day].orders++;
+      for (const li of (o.line_items || [])) {
+        const title = (li.title || 'Unknown').trim();
+        const qty = parseInt(li.quantity || 0);
+        const lineRev = parseFloat(li.price || 0) * qty;
+        const p = products[title] || (products[title] = { qty: 0, revenue: 0 });
+        p.qty += qty; p.revenue += lineRev;
+      }
     }
     const link = res.headers.get('link') || res.headers.get('Link') || '';
     const m = link.match(/<([^>]+)>;\s*rel="next"/);
     url = m ? m[1].split(`/admin/api/${API_VERSION}/`)[1] : null;
   }
-  return { orders, revenue, maxOrder, currency, daily, aov: orders ? revenue / orders : 0 };
+  const topProducts = Object.entries(products).sort((a, b) => b[1].qty - a[1].qty || b[1].revenue - a[1].revenue)
+    .slice(0, 5).map(([title, v]) => ({ title, qty: v.qty, revenue: v.revenue }));
+  return { orders, revenue, maxOrder, currency, daily, aov: orders ? revenue / orders : 0, bestSeller: topProducts[0] || null, topProducts };
 }
 
 // Best-effort sessions via ShopifyQL (needs read_analytics scope; null if unavailable).
@@ -237,15 +247,18 @@ async function fetchDigest({ brandKeys = [], range, withSessions = false, withAd
   const noAccess = out.filter(r => r.error === 'no_orders_scope').map(r => r.brand);
   const errored = out.filter(r => r.error && r.error !== 'no_orders_scope').map(r => `${r.brand} (${r.error})`);
   const totals = { revenue: 0, orders: 0, maxOrder: 0, sessions: 0, sessionsKnown: false, ccy: {} };
-  const dailyAll = {};
+  const dailyAll = {}; const prodAll = {};
   for (const r of ok) {
     totals.revenue += r.revenue; totals.orders += r.orders;
     totals.maxOrder = Math.max(totals.maxOrder, r.maxOrder || 0);
     if (r.sessions != null) { totals.sessions += r.sessions; totals.sessionsKnown = true; }
     totals.ccy[r.currency] = (totals.ccy[r.currency] || 0) + r.revenue;
     for (const [d, v] of Object.entries(r.daily || {})) { dailyAll[d] = dailyAll[d] || { revenue: 0, orders: 0 }; dailyAll[d].revenue += v.revenue; dailyAll[d].orders += v.orders; }
+    for (const p of (r.topProducts || [])) { const e = prodAll[p.title] || (prodAll[p.title] = { qty: 0, revenue: 0 }); e.qty += p.qty; e.revenue += p.revenue; }
   }
   totals.aov = totals.orders ? totals.revenue / totals.orders : 0;
+  totals.topProducts = Object.entries(prodAll).sort((a, b) => b[1].qty - a[1].qty || b[1].revenue - a[1].revenue).slice(0, 5).map(([title, v]) => ({ title, qty: v.qty, revenue: v.revenue }));
+  totals.bestSeller = totals.topProducts[0] || null;
   const ccy = ok[0]?.currency || 'INR';
   const report = { range, brands: ok, noAccess, errored, unknown: [], totals, dailyAll, ccy };
   if (withAds) {
@@ -268,20 +281,18 @@ function helpText() {
   const brands = keys.map(k => `• *${prettyName(k)}* — \`/${slugify(k)}\``).join('\n');
   return `*📊 Brand Sales — help*
 
-*Digest grammar*  \`{brands} digest|deepdigest {date/range}\`
+*digest* — quick numbers in Slack   \`{brands} digest {date/range}\`
 • \`digest\` — yesterday, all brands
 • \`myugen digest\` — one brand, yesterday
 • \`digest today\` — today 00:00 → now
-• \`digest 7d\` · \`digest30d\` · \`digest 15d\` — last N days
+• \`digest 7d\` · \`digest30d\` — last N days
 • \`digest 20.06.26\` — a specific day (DD.MM.YY)
-• \`digest 10.06.26-20.06.26\` — a date range
 • \`{myugen,kaand} digest 30d\` — club brands ({} required for multi/range)
-• \`{myugen,alankoch} deepdigest {05.04.26-20.06.26}\` — HTML report (opens as a link)
 
-*Trend*  \`{brands} trend {range}\` — daily revenue with a sparkline
-• \`trend 7d\` · \`myugen trend 30d\` · \`{myugen,voyd} trend {01.06.26-23.06.26}\`
+*trend* — full visual report (opens as a mobile-friendly link)   \`{brands} trend {range}\`
+• \`trend 30d\` · \`myugen trend 7d\` · \`{myugen,voyd} trend {01.06.26-23.06.26}\`
 
-Each digest shows *Revenue · Orders · AOV · Highest order · Sessions · Ad spend · ROAS · CTR (avg/▲/▼)*.
+Both show *Revenue · Orders · AOV · Highest order · Sessions · Ad spend · ROAS · CTR · best/worst CTR campaign (links) · best seller · status · ideas to improve*.
 
 *Slash commands* (work anywhere): \`/<brand>\` · \`/<brand> 30d\` · \`/sales\` · \`/help\`
 
@@ -297,6 +308,39 @@ function fmtMoney(n, ccy = 'INR') {
 }
 function fmtNum(n) { return Number(n || 0).toLocaleString('en-IN'); }
 function reportLink(text) { const b = process.env.REPORT_BASE_URL; return b ? `${b}?q=${encodeURIComponent(text)}` : null; }
+
+// ── Status badge + improvement ideas (data-driven) ──────────────────────────
+// m: { revenue, orders, adSpend, roas, ctr, aov, sessions }
+function healthStatus(m) {
+  if (m.adSpend > 0 && m.revenue === 0) return { emoji: '⛔', label: 'Burning - spend, zero sales', tone: 'bad' };
+  if (m.roas == null) return { emoji: '⚪', label: 'No ads running', tone: 'neutral' };
+  if (m.roas >= 2.5) return { emoji: '🟢', label: 'Strong - scale it', tone: 'good' };
+  if (m.roas >= 1.5) return { emoji: '🟢', label: 'Profitable', tone: 'good' };
+  if (m.roas >= 1) return { emoji: '🟡', label: 'Break-even', tone: 'warn' };
+  return { emoji: '🔴', label: 'Losing money on ads', tone: 'bad' };
+}
+// returns array of short actionable strings; topCampaign/worstCampaign optional {name,ctr}
+function improvementIdeas(m) {
+  const tips = [];
+  const ctr = m.ctr, roas = m.roas, money = n => fmtMoney(n, m.currency || 'INR');
+  if (m.adSpend > 0 && m.revenue === 0) {
+    tips.push(`⛔ ${money(m.adSpend)} spent with *0 sales* - pause these ads now and audit the funnel (broken checkout? wrong audience? dead landing page?).`);
+  } else if (roas != null) {
+    if (roas < 1) tips.push(`🔴 ROAS ${roas.toFixed(2)}x - you're losing money. Pause every campaign under 1x and move that budget to your best performer${m.topCampaign ? ` (*${m.topCampaign.name}*)` : ''}. Tighten the audience and test stronger hooks.`);
+    else if (roas < 1.5) tips.push(`🟡 ROAS ${roas.toFixed(2)}x - break-even. Trim the weakest campaign${m.worstCampaign ? ` (*${m.worstCampaign.name}*)` : ''}, double down on winners, and lift AOV with bundles/upsells.`);
+    else tips.push(`🟢 ROAS ${roas.toFixed(2)}x - profitable. Scale budget 20-30% on the top campaign${m.topCampaign ? ` (*${m.topCampaign.name}*)` : ''} while ROAS holds, and clone its creative.`);
+  }
+  if (ctr != null) {
+    if (ctr < 1) tips.push(`🎯 CTR ${ctr.toFixed(2)}% is low - the creative isn't grabbing attention. Refresh the thumbnail / first 3 seconds, try UGC and pattern-interrupt hooks.`);
+    else if (ctr >= 2 && roas != null && roas < 1) tips.push(`👀 CTR is healthy (${ctr.toFixed(2)}%) but ROAS is weak - clicks aren't converting. Fix the PDP, price, offer or checkout, not the ad.`);
+  }
+  if (m.bestSeller) tips.push(`🏆 *${m.bestSeller.title}* is your best seller (${fmtNum(m.bestSeller.qty)} sold) - feature it in ads and as the homepage hero.`);
+  if (m.sessions != null && m.orders && m.sessions) {
+    const cv = 100 * m.orders / m.sessions;
+    if (cv < 1) tips.push(`🛒 Conversion is ${cv.toFixed(2)}% (under 1%) - traffic is arriving but not buying. Audit page speed, trust signals and the offer.`);
+  }
+  return tips.length ? tips : ['No issues flagged for this range.'];
+}
 
 // ── Slack: simple sales blocks (slash) ──────────────────────────────────────
 function salesBlocks(report, { brandFilter = null, isAuto = false } = {}) {
@@ -320,45 +364,64 @@ function salesBlocks(report, { brandFilter = null, isAuto = false } = {}) {
 }
 
 // ── Slack: rich digest blocks ───────────────────────────────────────────────
-function digestBlocks(report) {
-  const { range, brands, totals, noAccess, errored, unknown, ccy } = report;
-  const scope = brands.length === 1 ? brands[0].brand : `${brands.length} brands`;
+function digestBlocks(report, { link = null } = {}) {
+  const { range, brands, totals, noAccess = [], errored = [], unknown = [], ccy } = report;
+  const a = report.ads || {};
+  const single = brands.length === 1;
+  const scope = single ? brands[0].brand : `${brands.length} brands`;
+  const pct = v => v != null ? v.toFixed(2) + '%' : '—';
+  const aggM = { revenue: totals.revenue, orders: totals.orders, adSpend: a.totalSpend || 0, roas: a.hasData ? a.roas : null, ctr: a.hasData ? a.avgCtr : null, aov: totals.aov, sessions: totals.sessionsKnown ? totals.sessions : null, currency: ccy, bestSeller: totals.bestSeller, topCampaign: a.high, worstCampaign: a.low };
+  const st = healthStatus(aggM);
   const sessions = totals.sessionsKnown ? fmtNum(totals.sessions) : '—';
   const blocks = [
-    { type: 'header', text: { type: 'plain_text', text: `📈 ${scope} digest · ${range.label}`, emoji: true } },
-    { type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 as of ${toIST()} IST` }] },
+    { type: 'header', text: { type: 'plain_text', text: `${st.emoji} ${scope} digest · ${range.label}`, emoji: true } },
+    { type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 ${toIST()} IST   ·   *${st.label}*` }] },
     { type: 'section', fields: [
       { type: 'mrkdwn', text: `*💰 Revenue*\n${fmtMoney(totals.revenue, ccy)}` },
       { type: 'mrkdwn', text: `*🧾 Orders*\n${fmtNum(totals.orders)}` },
       { type: 'mrkdwn', text: `*📊 AOV*\n${fmtMoney(totals.aov, ccy)}` },
       { type: 'mrkdwn', text: `*🔝 Highest order*\n${fmtMoney(totals.maxOrder, ccy)}` },
       { type: 'mrkdwn', text: `*👀 Sessions*\n${sessions}` },
-      { type: 'mrkdwn', text: `*🛒 Conv. (ord/sess)*\n${totals.sessionsKnown && totals.sessions ? (100 * totals.orders / totals.sessions).toFixed(1) + '%' : '—'}` },
+      { type: 'mrkdwn', text: `*🛒 Conv.*\n${totals.sessionsKnown && totals.sessions ? (100 * totals.orders / totals.sessions).toFixed(1) + '%' : '—'}` },
     ] },
   ];
-  const a = report.ads;
-  if (a && a.hasData) {
-    blocks[2].fields.push(
-      { type: 'mrkdwn', text: `*📣 Ad spend*\n${fmtMoney(a.totalSpend, ccy)}` },
-      { type: 'mrkdwn', text: `*📈 ROAS*\n${a.roas != null ? a.roas.toFixed(2) + 'x' : '—'}` },
-    );
-    const pct = v => v != null ? v.toFixed(2) + '%' : '—';
+  if (a.hasData) blocks[2].fields.push(
+    { type: 'mrkdwn', text: `*📣 Ad spend*\n${fmtMoney(a.totalSpend, ccy)}` },
+    { type: 'mrkdwn', text: `*📈 ROAS*\n${a.roas != null ? a.roas.toFixed(2) + 'x' : '—'}` },
+  );
+  // CTR + best/worst campaign with deep links
+  if (a.hasData) {
     let ctr = `*🎯 CTR* — avg ${pct(a.avgCtr)}`;
-    if (a.high) ctr += `   ·   ▲ ${a.high.label} ${pct(a.high.ctr)}`;
-    if (a.low) ctr += `   ·   ▼ ${a.low.label} ${pct(a.low.ctr)}`;
-    blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: ctr }] });
+    if (a.high) ctr += `\n▲ Best: <${a.high.link}|${a.high.name}> · ${pct(a.high.ctr)}`;
+    if (a.low) ctr += `\n▼ Worst: <${a.low.link}|${a.low.name}> · ${pct(a.low.ctr)}`;
+    blocks.push({ type: 'section', text: { type: 'mrkdwn', text: ctr } });
   }
-  if (brands.length > 1) {
+  if (totals.bestSeller) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `🏆 Best seller: *${totals.bestSeller.title}* — ${fmtNum(totals.bestSeller.qty)} sold` }] });
+  // per-brand breakdown
+  if (!single) {
     blocks.push({ type: 'divider' });
-    const lines = brands.map((r, i) => `${i < 3 ? ['🥇','🥈','🥉'][i] + ' ' : ''}*${r.brand}* — ${fmtMoney(r.revenue, r.currency)} · ${fmtNum(r.orders)} ord · ${fmtMoney(r.aov, r.currency)} AOV${r.roas != null ? ` · ${r.roas.toFixed(2)}x ROAS` : (r.adSpend ? ` · ${fmtMoney(r.adSpend, r.currency)} ad/0 rev` : '')}`);
-    for (let i = 0; i < lines.length; i += 18) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lines.slice(i, i + 18).join('\n') } });
+    const lines = brands.map((r, i) => `${i < 3 ? ['🥇','🥈','🥉'][i] + ' ' : ''}*${r.brand}* — ${fmtMoney(r.revenue, r.currency)} · ${fmtNum(r.orders)} ord${r.roas != null ? ` · ${r.roas.toFixed(2)}x` : (r.adSpend ? ` · ${fmtMoney(r.adSpend, r.currency)} ad/0 rev` : '')}${r.bestSeller ? ` · 🏆 ${r.bestSeller.title}` : ''}`);
+    for (let i = 0; i < lines.length; i += 15) blocks.push({ type: 'section', text: { type: 'mrkdwn', text: lines.slice(i, i + 15).join('\n') } });
+    // per-brand best/worst CTR campaign links only when the scope is small (avoid clutter)
+    if (brands.length <= 5 && a.hasData) {
+      const cl = brands.filter(b => b.topCampaign || b.worstCampaign).map(b =>
+        `*${b.brand}*  ${b.topCampaign ? `▲ <${b.topCampaign.link}|${b.topCampaign.name}> ${pct(b.topCampaign.ctr)}` : ''}${b.worstCampaign ? `  ▼ <${b.worstCampaign.link}|${b.worstCampaign.name}> ${pct(b.worstCampaign.ctr)}` : ''}`);
+      if (cl.length) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: cl.join('\n') }] });
+    } else if (a.hasData && link) {
+      blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `_per-brand best/worst campaign links → open the full report_` }] });
+    }
   }
+  // improvement ideas
+  const tips = improvementIdeas(aggM);
+  blocks.push({ type: 'divider' });
+  blocks.push({ type: 'section', text: { type: 'mrkdwn', text: `*💡 Ideas to improve*\n${tips.slice(0, single ? 4 : 3).map(t => '• ' + t).join('\n')}` } });
+  if (link) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: `📊 <${link}|Open full visual report>` }] });
   const notes = [];
-  if (!totals.sessionsKnown) notes.push('_sessions need the `read_analytics` scope on the store token_');
+  if (!totals.sessionsKnown) notes.push('_sessions need `read_analytics` on the store token_');
   if (unknown && unknown.length) notes.push(`⚠️ unknown brand: ${unknown.join(', ')}`);
   if (noAccess.length) notes.push(`⚠️ no order access: ${noAccess.join(', ')}`);
   if (errored.length) notes.push(`⚠️ errors: ${errored.join(', ')}`);
-  if (notes.length) { blocks.push({ type: 'divider' }); blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: notes.join('\n') }] }); }
+  if (notes.length) blocks.push({ type: 'context', elements: [{ type: 'mrkdwn', text: notes.join('\n') }] });
   return blocks;
 }
 
@@ -395,14 +458,18 @@ function trendBlocks(report, { link = null } = {}) {
   return blocks;
 }
 
-// ── Deep digest: standalone responsive HTML report with charts ──────────────
+// ── Smart sectioned HTML performance report (the "trend" report) ─────────────
 function buildDeepDigestHtml(report) {
   const { range, brands, totals, dailyAll, ccy } = report;
-  const scope = brands.length === 1 ? brands[0].brand : (brands.length ? brands.map(b => b.brand).join(', ') : 'All brands');
   const ads = report.ads || {};
   const hasAds = !!ads.hasData;
+  const single = brands.length === 1;
+  const multi = brands.length > 1;
+  const scope = single ? brands[0].brand : (brands.length ? `${brands.length} brands` : 'All brands');
   const money = n => fmtMoney(n, ccy);
   const pct = v => v != null ? v.toFixed(2) + '%' : '—';
+  const J = JSON.stringify;
+  const esc = s => String(s == null ? '' : s).replace(/[<>&]/g, c => ({ '<': '&lt;', '>': '&gt;', '&': '&amp;' }[c]));
 
   const days = Object.keys(dailyAll).sort();
   const dailyRev = days.map(d => Math.round(dailyAll[d].revenue));
@@ -413,71 +480,143 @@ function buildDeepDigestHtml(report) {
   const brandRoas = brands.map(b => b.roas != null ? +b.roas.toFixed(2) : 0);
   const brandCtr = brands.map(b => b.ctr != null ? +b.ctr.toFixed(2) : 0);
 
+  // status (single brand → that brand; multi → aggregate)
+  const aggM = { revenue: totals.revenue, orders: totals.orders, adSpend: ads.totalSpend || 0, roas: hasAds ? ads.roas : null, ctr: hasAds ? ads.avgCtr : null, aov: totals.aov, sessions: totals.sessionsKnown ? totals.sessions : null, currency: ccy, bestSeller: totals.bestSeller, topCampaign: ads.high, worstCampaign: ads.low };
+  const st = healthStatus(aggM);
+  const statusSummary = hasAds
+    ? `${money(totals.revenue)} revenue on ${money(ads.totalSpend)} ad spend · ROAS ${ads.roas != null ? ads.roas.toFixed(2) + 'x' : '—'} · CTR ${pct(ads.avgCtr)}`
+    : `${money(totals.revenue)} revenue · ${fmtNum(totals.orders)} orders · AOV ${money(totals.aov)}`;
+
   const kpis = [['Revenue', money(totals.revenue)], ['Orders', fmtNum(totals.orders)], ['AOV', money(totals.aov)], ['Highest order', money(totals.maxOrder)]];
   if (hasAds) kpis.push(['Ad spend', money(ads.totalSpend)], ['ROAS', ads.roas != null ? ads.roas.toFixed(2) + 'x' : '—'], ['Avg CTR', pct(ads.avgCtr)]);
-  kpis.push(['Sessions', totals.sessionsKnown ? fmtNum(totals.sessions) : 'n/a'], ['Brands', String(brands.length)]);
-
-  const rows = brands.map(b => `<tr><td>${b.brand}</td><td>${money(b.revenue)}</td><td>${fmtNum(b.orders)}</td><td>${money(b.aov)}</td>`
-    + (hasAds ? `<td>${money(b.adSpend || 0)}</td><td class="${b.roas != null && b.roas >= 1 ? 'pos' : 'neg'}">${b.roas != null ? b.roas.toFixed(2) + 'x' : '—'}</td><td>${b.ctr != null ? b.ctr.toFixed(2) + '%' : '—'}</td>` : '')
-    + `<td>${money(b.maxOrder)}</td><td>${b.sessions != null ? fmtNum(b.sessions) : '—'}</td></tr>`).join('');
+  kpis.push(['Sessions', totals.sessionsKnown ? fmtNum(totals.sessions) : 'n/a']);
+  if (multi) kpis.push(['Brands', String(brands.length)]);
 
   const brandW = Math.max(560, brands.length * 78);
   const dayW = Math.max(560, days.length * 38);
-  const J = JSON.stringify;
-  // a sideways-scrolling chart card; width scales with data so mobile scrolls instead of cramming
-  const chart = (id, title, minW, extra = '') => `<div class=card><h2>${title}</h2><div class=scroll><div class=cbox style="min-width:${minW}px"><canvas id=${id}></canvas></div></div><div class=hint>← swipe sideways to see all →</div>${extra}</div>`;
+  const chart = (id, title, minW) => `<div class=card><h2>${title}</h2><div class=scroll><div class=cbox style="min-width:${minW}px"><canvas id=${id}></canvas></div></div><div class=hint>← swipe sideways →</div></div>`;
+  const section = (title, inner) => `<div class=sec><div class=sech>${title}</div>${inner}</div>`;
+  const cmpLink = c => c ? `<a href="${c.link}" target=_blank>${esc(c.name)}</a> · ${pct(c.ctr)}` : '—';
+
+  // ── SALES section ──
+  let sales = chart('daily', 'Daily revenue', dayW);
+  if (days.length) sales += chart('dailyOrd', 'Daily orders', dayW);
+  if (multi) sales += chart('byBrand', 'Revenue by brand', brandW);
+
+  // ── ADS section ──
+  let adsSec = '';
+  if (hasAds) {
+    if (multi) {
+      adsSec += chart('roas', 'ROAS by brand (green ≥ 1x · red < 1x)', brandW);
+      adsSec += chart('spendRev', 'Ad spend vs revenue by brand', brandW);
+      adsSec += chart('ctr', 'CTR by brand (%)', brandW);
+    } else if (single) {
+      const c = (brands[0].campaigns || []).filter(x => x.spend > 0);
+      if (c.length) {
+        adsSec += chart('campSpend', 'Spend by campaign', Math.max(560, c.length * 70));
+        adsSec += chart('campCtr', 'CTR by campaign (%)', Math.max(560, c.length * 70));
+      }
+    }
+    // best/worst CTR campaign with links (per brand)
+    const rowsCtr = (multi ? brands : brands).filter(b => b.topCampaign || b.worstCampaign).map(b =>
+      `<tr><td>${esc(b.brand)}</td><td>${cmpLink(b.topCampaign)}</td><td>${cmpLink(b.worstCampaign)}</td></tr>`).join('');
+    if (rowsCtr) adsSec += `<div class=card><h2>Best / worst CTR campaign ${multi ? 'per brand' : ''} (tap to open in Ads Manager)</h2><div class=scroll><table><tr><th>Brand</th><th>▲ Best CTR</th><th>▼ Worst CTR</th></tr>${rowsCtr}</table></div></div>`;
+  }
+
+  // ── BEST SELLERS section ──
+  const tp = (single ? brands[0].topProducts : totals.topProducts) || [];
+  let sellers = '';
+  if (tp.length) {
+    const r = tp.map((p, i) => `<tr><td>${i + 1}</td><td>${esc(p.title)}</td><td>${fmtNum(p.qty)}</td><td>${money(p.revenue)}</td></tr>`).join('');
+    sellers = `<div class=card><h2>Top products ${single ? '' : '(all brands combined)'}</h2><div class=scroll><table><tr><th>#</th><th>Product</th><th>Units</th><th>Revenue</th></tr>${r}</table></div></div>`;
+  }
+
+  // ── PER-BRAND TABLE (multi only) ──
+  let table = '';
+  if (multi) {
+    const rows = brands.map(b => `<tr><td>${esc(b.brand)}</td><td>${money(b.revenue)}</td><td>${fmtNum(b.orders)}</td><td>${money(b.aov)}</td>`
+      + (hasAds ? `<td>${money(b.adSpend || 0)}</td><td class="${b.roas != null && b.roas >= 1 ? 'pos' : 'neg'}">${b.roas != null ? b.roas.toFixed(2) + 'x' : '—'}</td><td>${b.ctr != null ? b.ctr.toFixed(2) + '%' : '—'}</td>` : '')
+      + `<td>${b.bestSeller ? esc(b.bestSeller.title) : '—'}</td></tr>`).join('');
+    table = `<div class=card><h2>Per-brand breakdown</h2><div class=scroll><table><tr><th>Brand</th><th>Revenue</th><th>Orders</th><th>AOV</th>${hasAds ? '<th>Ad spend</th><th>ROAS</th><th>CTR</th>' : ''}<th>Best seller</th></tr>${rows}</table></div></div>`;
+  }
+
+  // ── RECOMMENDATIONS section ──
+  let recs;
+  if (single) {
+    const b = brands[0];
+    const m = { revenue: b.revenue, orders: b.orders, adSpend: b.adSpend || 0, roas: b.roas, ctr: b.ctr, aov: b.aov, sessions: b.sessions, currency: b.currency, bestSeller: b.bestSeller, topCampaign: b.topCampaign, worstCampaign: b.worstCampaign };
+    recs = `<ul class=ideas>${improvementIdeas(m).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul>`;
+  } else {
+    recs = brands.slice(0, 8).map(b => {
+      const m = { revenue: b.revenue, orders: b.orders, adSpend: b.adSpend || 0, roas: b.roas, ctr: b.ctr, aov: b.aov, sessions: b.sessions, currency: b.currency, bestSeller: b.bestSeller, topCampaign: b.topCampaign, worstCampaign: b.worstCampaign };
+      const s = healthStatus(m);
+      return `<div class=brec><div class=brh>${s.emoji} ${esc(b.brand)} <span class=bmut>${s.label}</span></div><ul class=ideas>${improvementIdeas(m).slice(0, 2).map(t => `<li>${esc(t.replace(/\*/g, ''))}</li>`).join('')}</ul></div>`;
+    }).join('');
+  }
 
   return `<!doctype html><html lang=en><head><meta charset=utf-8><meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
-<title>Deep digest · ${scope} · ${range.label}</title>
+<title>${esc(scope)} · ${esc(range.label)} · report</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
-:root{--bg:#0b0b0d;--panel:#15151a;--line:#26262e;--fg:#f4f4f6;--mut:#9a9aa3;--acc:#ff3b3b;--pos:#36d399;--neg:#ff5a5a}
+:root{--bg:#0b0b0d;--panel:#15151a;--line:#26262e;--fg:#f4f4f6;--mut:#9a9aa3;--pos:#36d399;--warn:#ffd166;--neg:#ff5a5a}
 *{box-sizing:border-box}html{-webkit-text-size-adjust:100%}
-body{margin:0;background:radial-gradient(1200px 600px at 75% -10%,#1b1b24,#0b0b0d 60%);color:var(--fg);font:15px/1.5 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif}
-.wrap{max-width:1080px;margin:0 auto;padding:28px 16px 70px}
-h1{font:800 24px/1.1 'Helvetica Neue',Arial;margin:0 0 4px;text-transform:uppercase;letter-spacing:.01em}
-.sub{color:var(--mut);margin-bottom:22px;font-size:13px}
-.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:22px}
+body{margin:0;background:radial-gradient(1200px 600px at 75% -10%,#1b1b24,#0b0b0d 60%);color:var(--fg);font:15px/1.55 ui-sans-serif,-apple-system,Segoe UI,Roboto,sans-serif}
+.wrap{max-width:1080px;margin:0 auto;padding:26px 16px 80px}
+h1{font:800 24px/1.1 'Helvetica Neue',Arial;margin:0 0 3px;text-transform:uppercase;letter-spacing:.01em}
+.sub{color:var(--mut);margin-bottom:18px;font-size:13px}
+.status{border-radius:16px;padding:18px 20px;margin-bottom:22px;border:1px solid var(--line)}
+.status.good{background:linear-gradient(120deg,rgba(54,211,153,.16),rgba(54,211,153,.04));border-color:rgba(54,211,153,.4)}
+.status.warn{background:linear-gradient(120deg,rgba(255,209,102,.16),rgba(255,209,102,.04));border-color:rgba(255,209,102,.4)}
+.status.bad{background:linear-gradient(120deg,rgba(255,90,90,.16),rgba(255,90,90,.04));border-color:rgba(255,90,90,.4)}
+.status .big{font:800 22px/1.15 'Helvetica Neue',Arial}
+.status .sm{color:var(--mut);font-size:13px;margin-top:4px}
+.kpis{display:grid;grid-template-columns:repeat(4,1fr);gap:12px;margin-bottom:8px}
 @media(max-width:880px){.kpis{grid-template-columns:repeat(3,1fr)}}
 @media(max-width:560px){.kpis{grid-template-columns:repeat(2,1fr);gap:10px}}
-.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px}
+.kpi{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:13px 15px}
 .kpi .l{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.07em}
-.kpi .v{font:800 22px/1.2 'Helvetica Neue',Arial;margin-top:5px;word-break:break-word}
-.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:18px}
-.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--mut);margin:0 0 12px}
+.kpi .v{font:800 21px/1.2 'Helvetica Neue',Arial;margin-top:4px;word-break:break-word}
+.sec{margin-top:26px}
+.sech{font:800 13px/1 'Helvetica Neue',Arial;text-transform:uppercase;letter-spacing:.12em;color:#fff;margin:0 0 12px;padding-left:10px;border-left:3px solid var(--neg)}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:16px;padding:16px;margin-bottom:14px}
+.card h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--mut);margin:0 0 12px}
 .scroll{overflow-x:auto;overflow-y:hidden;-webkit-overflow-scrolling:touch;border-radius:10px}
 .scroll::-webkit-scrollbar{height:8px}.scroll::-webkit-scrollbar-thumb{background:#34343f;border-radius:8px}
 .cbox{position:relative;height:300px}@media(max-width:560px){.cbox{height:260px}}
 .hint{display:none;color:var(--mut);font-size:11px;margin-top:8px;text-align:center}
 @media(max-width:760px){.hint{display:block}}
-.scroll table{min-width:640px}
+.scroll table{min-width:560px}
 table{width:100%;border-collapse:collapse;font-size:14px}
 td,th{padding:9px 12px;text-align:left;border-bottom:1px solid #1f1f27;white-space:nowrap}
 th{color:var(--mut);font-size:11px;text-transform:uppercase;letter-spacing:.06em}
 tr td:first-child{font-weight:600}
 td.pos{color:var(--pos);font-weight:700}td.neg{color:var(--neg);font-weight:700}
-.foot{color:var(--mut);font-size:12px;margin-top:14px}
+a{color:#7cb8ff;text-decoration:none}a:hover{text-decoration:underline}
+.ideas{margin:0;padding-left:18px}.ideas li{margin:7px 0}
+.brec{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:12px}
+.brh{font-weight:700;margin-bottom:4px}.bmut{color:var(--mut);font-weight:400;font-size:13px}
+.foot{color:var(--mut);font-size:12px;margin-top:22px}
 </style></head><body><div class=wrap>
-<h1>Deep digest</h1>
-<div class=sub>${scope} &nbsp;·&nbsp; ${range.label} &nbsp;·&nbsp; generated ${toIST()} IST</div>
+<h1>${esc(scope)} report</h1>
+<div class=sub>${esc(range.label)} &nbsp;·&nbsp; generated ${toIST()} IST</div>
+<div class="status ${st.tone}"><div class=big>${st.emoji} ${st.label}</div><div class=sm>${statusSummary}</div></div>
 <div class=kpis>${kpis.map(([l, v]) => `<div class=kpi><div class=l>${l}</div><div class=v>${v}</div></div>`).join('')}</div>
-${chart('byBrand', 'Revenue by brand', brandW)}
-${hasAds ? chart('roas', 'ROAS by brand (green ≥ 1x · red < 1x)', brandW) : ''}
-${hasAds ? chart('spendRev', 'Ad spend vs revenue by brand', brandW) : ''}
-${hasAds ? chart('ctr', 'CTR by brand (%)', brandW) : ''}
-${chart('daily', 'Daily revenue', dayW)}
-<div class=card><h2>Per-brand breakdown</h2><div class=scroll><table><tr><th>Brand</th><th>Revenue</th><th>Orders</th><th>AOV</th>${hasAds ? '<th>Ad spend</th><th>ROAS</th><th>CTR</th>' : ''}<th>Highest</th><th>Sessions</th></tr>${rows}</table></div>
-${totals.sessionsKnown ? '' : '<div class=foot>Sessions show n/a where the store token lacks the read_analytics scope.</div>'}
-${hasAds ? '<div class=foot>Ad spend/ROAS/CTR from Meta, brand-named campaigns only (shared catalog ad excluded). ROAS = revenue ÷ ad spend.</div>' : ''}</div>
-<div class=foot>Brand Sales bot · deepdigest</div>
+${section('Sales', sales)}
+${hasAds ? section('Ads &amp; ROAS', adsSec) : ''}
+${sellers ? section('Best sellers', sellers) : ''}
+${multi ? section('Per-brand breakdown', table) : ''}
+${section('💡 How to improve', recs)}
+<div class=foot>${hasAds ? 'Ad spend / ROAS / CTR from Meta, brand-named campaigns only (shared catalog ad excluded). ROAS = revenue ÷ ad spend. ' : ''}${totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}Brand Sales bot.</div>
 <script>
 const C={grid:'#1f1f27',tick:'#9a9aa3'};
 const ax=(leg)=>({maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},scales:{x:{ticks:{color:C.tick,maxRotation:60,minRotation:0,autoSkip:false},grid:{color:C.grid}},y:{beginAtZero:true,ticks:{color:C.tick},grid:{color:C.grid}}},plugins:{legend:{display:!!leg,labels:{color:C.tick}}}});
-new Chart(byBrand,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRev)},backgroundColor:'#ff3b3b',borderRadius:6}]},options:ax(false)});
-${hasAds ? `new Chart(roas,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRoas)},backgroundColor:${J(brandRoas.map(v => v >= 1 ? '#36d399' : '#ff5a5a'))},borderRadius:6}]},options:ax(false)});` : ''}
-${hasAds ? `new Chart(spendRev,{type:'bar',data:{labels:${J(brandNames)},datasets:[{label:'Ad spend',data:${J(brandSpend)},backgroundColor:'#7c5cff',borderRadius:5},{label:'Revenue',data:${J(brandRev)},backgroundColor:'#36d399',borderRadius:5}]},options:ax(true)});` : ''}
-${hasAds ? `new Chart(ctr,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandCtr)},backgroundColor:'#ffb454',borderRadius:6}]},options:ax(false)});` : ''}
 new Chart(daily,{type:'line',data:{labels:${J(days)},datasets:[{data:${J(dailyRev)},borderColor:'#ff8a4d',backgroundColor:'rgba(255,138,77,.15)',fill:true,tension:.3,pointRadius:2}]},options:ax(false)});
+${days.length ? `new Chart(dailyOrd,{type:'bar',data:{labels:${J(days)},datasets:[{data:${J(dailyOrd)},backgroundColor:'#7c5cff',borderRadius:4}]},options:ax(false)});` : ''}
+${multi ? `new Chart(byBrand,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRev)},backgroundColor:'#ff3b3b',borderRadius:6}]},options:ax(false)});` : ''}
+${multi && hasAds ? `new Chart(roas,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandRoas)},backgroundColor:${J(brandRoas.map(v => v >= 1 ? '#36d399' : '#ff5a5a'))},borderRadius:6}]},options:ax(false)});` : ''}
+${multi && hasAds ? `new Chart(spendRev,{type:'bar',data:{labels:${J(brandNames)},datasets:[{label:'Ad spend',data:${J(brandSpend)},backgroundColor:'#7c5cff',borderRadius:5},{label:'Revenue',data:${J(brandRev)},backgroundColor:'#36d399',borderRadius:5}]},options:ax(true)});` : ''}
+${multi && hasAds ? `new Chart(ctr,{type:'bar',data:{labels:${J(brandNames)},datasets:[{data:${J(brandCtr)},backgroundColor:'#ffb454',borderRadius:6}]},options:ax(false)});` : ''}
+${single && hasAds && (brands[0].campaigns || []).filter(x => x.spend > 0).length ? (() => { const c = brands[0].campaigns.filter(x => x.spend > 0); const lbl = c.map(x => x.name); return `new Chart(campSpend,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(c.map(x => Math.round(x.spend)))},backgroundColor:'#7c5cff',borderRadius:5}]},options:ax(false)});new Chart(campCtr,{type:'bar',data:{labels:${J(lbl)},datasets:[{data:${J(c.map(x => +x.ctr.toFixed(2)))},backgroundColor:'#ffb454',borderRadius:5}]},options:ax(false)});`; })() : ''}
 </script></div></body></html>`;
 }
 

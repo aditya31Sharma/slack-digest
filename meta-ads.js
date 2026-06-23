@@ -4,8 +4,11 @@
 // and the digest degrades gracefully (ad fields show "—").
 
 const AD_ACCOUNT = () => process.env.META_AD_ACCOUNT || 'act_6975164685832740';
+const acctNum = () => AD_ACCOUNT().replace(/^act_/, '');
+const campaignLink = id => `https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=${acctNum()}&selected_campaign_ids=${id}`;
 const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const ymd = d => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+const MIN_IMPR = 200; // ignore tiny-impression campaigns when picking best/worst CTR
 
 // Campaign-name → store key. Keys MUST equal the env-prefix store keys (loadStores)
 // so the join to revenue is exact. raw = lowercased name, n = stripped.
@@ -51,7 +54,7 @@ async function fetchMetaInsights(range) {
   const until = ymd(new Date((range && range.to ? range.to.getTime() : Date.now()) - 1));
   const tr = encodeURIComponent(JSON.stringify({ since, until }));
   const url = `https://graph.facebook.com/v21.0/${AD_ACCOUNT()}/insights`
-    + `?level=campaign&fields=campaign_name,spend,impressions,clicks&time_range=${tr}&limit=300&access_token=${TOKEN}`;
+    + `?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${tr}&limit=300&access_token=${TOKEN}`;
   const rows = await getAll(url);
   const byBrand = {}; const account = { spend: 0, clicks: 0, impr: 0 };
   for (const r of rows) {
@@ -61,9 +64,17 @@ async function fetchMetaInsights(range) {
     if (!k) continue;
     const b = byBrand[k] || (byBrand[k] = { spend: 0, clicks: 0, impr: 0, campaigns: [] });
     b.spend += sp; b.clicks += cl; b.impr += im;
-    b.campaigns.push({ name: r.campaign_name, spend: sp, clicks: cl, impr: im, ctr: im ? cl / im * 100 : 0 });
+    b.campaigns.push({ id: r.campaign_id, name: r.campaign_name, link: campaignLink(r.campaign_id), spend: sp, clicks: cl, impr: im, ctr: im ? cl / im * 100 : 0 });
   }
-  for (const k in byBrand) { const b = byBrand[k]; b.ctr = b.impr ? b.clicks / b.impr * 100 : 0; }
+  for (const k in byBrand) {
+    const b = byBrand[k]; b.ctr = b.impr ? b.clicks / b.impr * 100 : 0;
+    // highest / lowest CTR campaign for this brand (ignore tiny-impression noise)
+    const elig = b.campaigns.filter(c => c.impr >= MIN_IMPR);
+    const pool = elig.length ? elig : b.campaigns;
+    const sorted = [...pool].sort((a, c) => c.ctr - a.ctr);
+    b.high = sorted[0] || null;
+    b.low = sorted.length > 1 ? sorted[sorted.length - 1] : null;
+  }
   account.ctr = account.impr ? account.clicks / account.impr * 100 : 0;
   return { byBrand, account, since, until };
 }
@@ -77,24 +88,24 @@ function attachAds(report, ins) {
     b.adSpend = a ? a.spend : 0; b.adClicks = a ? a.clicks : 0; b.adImpr = a ? a.impr : 0;
     b.ctr = a && a.impr ? a.ctr : null;
     b.roas = b.adSpend > 0 ? b.revenue / b.adSpend : null;
+    b.topCampaign = a && a.high ? a.high : null;   // highest-CTR campaign (with link)
+    b.worstCampaign = a && a.low ? a.low : null;   // lowest-CTR campaign (with link)
+    b.campaigns = a ? a.campaigns : [];            // full campaign list (for single-brand views)
   }
   const totalSpend = scope.reduce((s, b) => s + (b.adSpend || 0), 0);
   const totalClicks = scope.reduce((s, b) => s + (b.adClicks || 0), 0);
   const totalImpr = scope.reduce((s, b) => s + (b.adImpr || 0), 0);
-  // CTR units: across brands when many; across the single brand's campaigns when one.
-  let units;
-  if (scope.length > 1) units = scope.filter(b => b.adImpr > 0).map(b => ({ label: b.brand, ctr: b.ctr, spend: b.adSpend }));
-  else if (scope.length === 1) { const a = ins.byBrand[scope[0].key]; units = (a ? a.campaigns : []).filter(c => c.impr > 0).map(c => ({ label: c.name, ctr: c.ctr, spend: c.spend })); }
-  else units = [];
-  units.sort((a, b) => b.ctr - a.ctr);
+  // account-wide best/worst CTR campaign across all in-scope brands (for the headline)
+  const allC = scope.flatMap(b => (ins.byBrand[b.key]?.campaigns || []).filter(c => c.impr >= 200));
+  allC.sort((a, c) => c.ctr - a.ctr);
   report.ads = {
     hasData: totalSpend > 0,
     totalSpend, totalClicks, totalImpr,
     accountSpend: ins.account.spend,
     avgCtr: totalImpr ? totalClicks / totalImpr * 100 : null,
     roas: totalSpend > 0 ? report.totals.revenue / totalSpend : null,
-    high: units[0] || null,
-    low: units.length > 1 ? units[units.length - 1] : null,
+    high: allC[0] || null,
+    low: allC.length > 1 ? allC[allC.length - 1] : null,
   };
   return report;
 }
