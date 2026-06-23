@@ -121,18 +121,25 @@ async function startBolt() {
   console.log(`⚡  Sales bot connected — slash: ${Object.keys(stores).map(k => '/' + slugify(k)).join(' ')}`);
 }
 
-// ── Cron: daily 12:00 PM IST digest of the full previous day ────────────────
+// ── Daily 12:00 PM IST digest of the full previous day ──────────────────────
+// Guarded so it sends at most once per IST day no matter how many triggers fire
+// (in-process cron + optional external cron both call this safely).
+let _lastDigestYMD = null;
+function istYMD() { return new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' }); }
+async function sendDailyDigest({ force = false } = {}) {
+  if (!isConfigured()) return { sent: false, reason: 'not configured' };
+  const today = istYMD();
+  if (!force && _lastDigestYMD === today) return { sent: false, reason: 'already sent today' };
+  _lastDigestYMD = today;
+  const client = new WebClient(process.env.SLACK_BOT_TOKEN);
+  console.log(`⏰  Daily digest at ${toIST()} (yesterday)`);
+  const report = await fetchDigest({ brandKeys: [], range: resolveRange('yesterday'), withSessions: true, withAds: true });
+  await client.chat.postMessage({ channel: process.env.SLACK_USER_ID, blocks: digestBlocks(report), text: 'Daily brand digest' });
+  return { sent: true, revenue: report.totals.revenue };
+}
 function startScheduler() {
-  if (process.env.DISABLE_LOCAL_CRON === 'true') { console.log('⏸  Local cron disabled (Firebase owns the digest)'); return; }
-  cron.schedule('0 12 * * *', async () => {
-    if (!isConfigured()) return;
-    try {
-      const client = new WebClient(process.env.SLACK_BOT_TOKEN);
-      console.log(`⏰  Daily digest at ${toIST()} (yesterday)`);
-      const report = await fetchDigest({ brandKeys: [], range: resolveRange('yesterday'), withSessions: true, withAds: true });
-      await client.chat.postMessage({ channel: process.env.SLACK_USER_ID, blocks: digestBlocks(report), text: 'Daily brand digest' });
-    } catch (e) { console.error('scheduler:', e.message); }
-  }, { timezone: 'Asia/Kolkata' });
+  if (process.env.DISABLE_LOCAL_CRON === 'true') { console.log('⏸  Local cron disabled'); return; }
+  cron.schedule('0 12 * * *', () => sendDailyDigest().catch(e => console.error('scheduler:', e.message)), { timezone: 'Asia/Kolkata' });
   console.log('📅  Daily digest scheduled: 12:00 PM IST (yesterday, 00:00–23:59)');
 }
 
@@ -141,6 +148,13 @@ const webApp = express();
 const PORT = process.env.PORT || 3000;
 webApp.get('/healthz', (_q, r) => r.json({ ok: true, configured: isConfigured(), time: toIST() }));
 webApp.get('/', (_q, r) => r.type('text').send(`Brand Sales Slack bot\nconfigured: ${isConfigured()}\nbrands: ${Object.keys(loadStores()).length}\ntime: ${toIST()} IST`));
+// External cron trigger for the noon digest (bulletproof: the HTTP hit also wakes
+// the instance if it slept). Protect with CRON_KEY. ?force=1 ignores the once-a-day guard.
+webApp.get('/cron/digest', async (req, res) => {
+  if (process.env.CRON_KEY && req.query.key !== process.env.CRON_KEY) return res.status(403).json({ error: 'bad key' });
+  try { res.json(await sendDailyDigest({ force: req.query.force === '1' })); }
+  catch (e) { console.error('cron endpoint:', e.message); res.status(500).json({ error: e.message }); }
+});
 webApp.get('/api/sales', async (req, res) => {
   try { res.json(await fetchAllBrandSales(req.query.range || 'today', req.query.brand ? { only: storeKeyFromText(req.query.brand) } : {})); }
   catch (e) { res.status(500).json({ error: e.message }); }
