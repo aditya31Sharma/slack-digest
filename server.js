@@ -4,6 +4,10 @@
 // Daily digest at 12:00 PM IST for the full previous day (00:00-23:59).
 // (When the Firebase scheduled function owns the digest, set DISABLE_LOCAL_CRON=true here.)
 require('dotenv').config();
+// Never let a Slack/socket/runtime error kill the process — the web server must stay up
+// so the host's health check keeps passing.
+process.on('unhandledRejection', (e) => console.error('unhandledRejection:', e?.message || e));
+process.on('uncaughtException', (e) => console.error('uncaughtException:', e?.message || e));
 const express = require('express');
 const os = require('os');
 const fs = require('fs');
