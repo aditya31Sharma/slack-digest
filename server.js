@@ -165,7 +165,19 @@ webApp.listen(PORT, () => {
   if (!isConfigured()) console.log('⚠️  Missing SLACK_BOT_TOKEN / SLACK_APP_TOKEN / SLACK_USER_ID');
 });
 
+// Keepalive: ping our own public URL every 4 min so Koyeb's free tier never
+// idles the instance to sleep (which would drop the Slack socket). Only runs
+// against a public https URL (no-op locally).
+function startKeepalive() {
+  const base = (process.env.REPORT_BASE_URL || '').replace(/\/report.*$/, '');
+  if (!base.startsWith('https://')) return;
+  const url = `${base}/healthz`;
+  setInterval(() => { fetch(url).catch(() => {}); }, 4 * 60 * 1000);
+  console.log(`🫀  keepalive → ${url} every 4m`);
+}
+
 if (isConfigured()) {
   startBolt().catch(e => console.error('Bolt error:', e.message));
   startScheduler();
+  startKeepalive();
 }
