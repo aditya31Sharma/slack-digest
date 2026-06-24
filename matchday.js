@@ -45,6 +45,7 @@ async function computeMatchdayDeal({ windowEndUtc = lastNoonIST(), now = new Dat
     const utc = matchUTC(m.date, m.time);
     if (!utc || utc < startUtc || utc >= endUtc) continue;
     inWindow.push({
+      team1: m.team1, team2: m.team2, score: `${m.score.ft[0]}-${m.score.ft[1]}`,
       teams: `${m.team1} ${m.score.ft[0]}-${m.score.ft[1]} ${m.team2}`,
       goals: m.score.ft[0] + m.score.ft[1],
       kickoffIST: new Date(utc.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' ') + ' IST',
