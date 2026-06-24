@@ -142,6 +142,24 @@ function startScheduler() {
   cron.schedule('0 12 * * *', () => sendDailyDigest().catch(e => console.error('scheduler:', e.message)), { timezone: 'Asia/Kolkata' });
   console.log('📅  Daily digest scheduled: 12:00 PM IST (yesterday, 00:00–23:59)');
 }
+// ── Matchday Deal: every day at 12:00 IST, recompute goals -> create that day's
+// discount code + refresh the storefront metafield. Enable with MATCHDAY_LIVE=true.
+let _lastMatchdayYMD = null;
+async function runMatchdayDaily() {
+  const today = istYMD();
+  if (_lastMatchdayYMD === today) return;
+  _lastMatchdayYMD = today;
+  const deal = await require('./matchday').runMatchdayDeal();
+  if (process.env.SLACK_USER_ID) {
+    try { await new WebClient(process.env.SLACK_BOT_TOKEN).chat.postMessage({ channel: process.env.SLACK_USER_ID, text: `⚽ Matchday deal live: ${deal.goals} goals → *${deal.percent}% off*, code *${deal.code}* (valid till next noon).` }); } catch {}
+  }
+  console.log('matchday:', deal.code, deal.percent + '%');
+}
+function startMatchdayCron() {
+  if (process.env.MATCHDAY_LIVE !== 'true') { console.log('⏸  Matchday cron off (set MATCHDAY_LIVE=true)'); return; }
+  cron.schedule('0 12 * * *', () => runMatchdayDaily().catch(e => console.error('matchday cron:', e.message)), { timezone: 'Asia/Kolkata' });
+  console.log('⚽  Matchday deal scheduled: 12:00 PM IST daily');
+}
 
 // ── Express (health + JSON) ─────────────────────────────────────────────────
 const webApp = express();
@@ -212,5 +230,6 @@ function startKeepalive() {
 if (isConfigured()) {
   startBolt().catch(e => console.error('Bolt error:', e.message));
   startScheduler();
+  startMatchdayCron();
   startKeepalive();
 }
