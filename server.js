@@ -169,6 +169,28 @@ webApp.get('/report', async (req, res) => {
     res.type('html').send(buildDeepDigestHtml(report));
   } catch (e) { res.status(500).type('text').send('error: ' + e.message); }
 });
+// ── Matchday Deal STAGING preview (read-only; no theme, no checkout, not live) ──
+webApp.get('/matchday', async (_q, res) => {
+  try {
+    const { computeMatchdayDeal } = require('./matchday');
+    const { matchdayPreviewHtml } = require('./matchday-preview');
+    const deal = await computeMatchdayDeal();
+    const dB64 = fs.readFileSync(__dirname + '/assets/mg-wc-desktop.webp').toString('base64');
+    const mB64 = fs.readFileSync(__dirname + '/assets/mg-wc-mobile.webp').toString('base64');
+    res.type('html').send(matchdayPreviewHtml(deal, dB64, mB64));
+  } catch (e) { res.status(500).type('text').send('matchday preview error: ' + e.message); }
+});
+// JSON of today's computed deal (handy for debugging the staging page)
+webApp.get('/matchday/data', async (_q, res) => {
+  try { res.json(await require('./matchday').computeMatchdayDeal()); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Manual "go live" trigger - creates the real discount + metafield. NOT auto-run, key-gated.
+webApp.get('/matchday/golive', async (req, res) => {
+  if (process.env.CRON_KEY && req.query.key !== process.env.CRON_KEY) return res.status(403).json({ error: 'bad key' });
+  try { res.json({ ok: true, deal: await require('./matchday').runMatchdayDeal() }); }
+  catch (e) { res.status(500).json({ error: e.message }); }
+});
 webApp.listen(PORT, () => {
   const ip = Object.values(os.networkInterfaces()).flat().find(n => n.family === 'IPv4' && !n.internal)?.address || 'localhost';
   if (!process.env.REPORT_BASE_URL) process.env.REPORT_BASE_URL = `http://${ip}:${PORT}/report`;
