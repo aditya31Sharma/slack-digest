@@ -52,6 +52,7 @@ function loadStores() {
 // ── Token resolution: prefer a freshly minted client-credentials token (self-
 // healing, 24h), fall back to the static token. Cached in-memory per domain. ──
 const _tokenCache = {};
+function invalidateToken(domain) { delete _tokenCache[domain]; }
 async function mintToken({ domain, clientId, clientSecret }) {
   const cached = _tokenCache[domain];
   if (cached && cached.exp > Date.now()) return cached.token;
@@ -171,11 +172,18 @@ async function storeMetrics(store, range) {
   if (range.from) params.set('created_at_min', range.from.toISOString());
   if (range.to) params.set('created_at_max', range.to.toISOString());
   let url = `orders.json?${params.toString()}`;
-  let orders = 0, revenue = 0, maxOrder = 0, currency = 'INR', guard = 0;
+  let orders = 0, revenue = 0, maxOrder = 0, currency = 'INR', guard = 0, reminted = false;
   const daily = {}; const products = {}; // title -> { qty, revenue }
   while (url && guard++ < 400) {
     const res = await apiGet(domain, token, url);
-    if (res.status === 403 || res.status === 401) return { error: 'no_orders_scope' };
+    if (res.status === 401 || res.status === 403) {
+      // self-heal: a revoked/rotated minted token (e.g. after an app reinstall) -> drop cache, re-mint once
+      if (!reminted && store.clientId && store.clientSecret) {
+        reminted = true; invalidateToken(domain);
+        try { token = await mintToken(store); guard--; continue; } catch { /* fall through */ }
+      }
+      return { error: 'no_orders_scope' };
+    }
     if (res.status === 429) { await new Promise(r => setTimeout(r, 2000)); continue; }
     if (!res.ok) return { error: `http_${res.status}` };
     const data = await res.json();
