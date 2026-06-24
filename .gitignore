@@ -8,3 +8,4 @@ data/state.json
 *.log
 firebase-debug.log
 firebase/**/.env
+.gstack/

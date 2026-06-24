@@ -105,6 +105,27 @@ async function createMatchdayDiscount(deal) {
   return out?.codeDiscountNode?.id;
 }
 
+// Delete any existing discount with this code so we can recreate it with today's
+// noon->noon window. Without this, re-running (or two days with the same goal
+// count -> same GOALSn code) would either collide on create or leave an EXPIRED
+// code in place. Safe no-op if the code doesn't exist yet.
+async function deleteExistingCode(code) {
+  const { token, domain } = await myugenToken();
+  const q = `query($c:String!){ codeDiscountNodeByCode(code:$c){ id } }`;
+  const r = await fetch(`https://${domain}/admin/api/2024-04/graphql.json`, {
+    method: 'POST', headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: q, variables: { c: code } }),
+  });
+  const id = (await r.json())?.data?.codeDiscountNodeByCode?.id;
+  if (!id) return false;
+  const dq = `mutation($id:ID!){ discountCodeDelete(id:$id){ userErrors{ message } } }`;
+  await fetch(`https://${domain}/admin/api/2024-04/graphql.json`, {
+    method: 'POST', headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
+    body: JSON.stringify({ query: dq, variables: { id } }),
+  });
+  return true;
+}
+
 // Write the deal into a Shop metafield so the storefront section can read it live.
 async function writeMetafield(deal) {
   const { token, domain } = await myugenToken();
@@ -123,12 +144,13 @@ async function writeMetafield(deal) {
 // Full daily run (compute -> create code -> write metafield). NOT scheduled anywhere.
 async function runMatchdayDeal() {
   const deal = await computeMatchdayDeal();
+  await deleteExistingCode(deal.code);   // clear yesterday's / stale same-name code first
   await createMatchdayDiscount(deal);
   await writeMetafield(deal);
   return deal;
 }
 
-module.exports = { computeMatchdayDeal, createMatchdayDiscount, writeMetafield, runMatchdayDeal, lastNoonIST, matchUTC };
+module.exports = { computeMatchdayDeal, createMatchdayDiscount, deleteExistingCode, writeMetafield, runMatchdayDeal, lastNoonIST, matchUTC };
 
 // CLI: `node matchday.js`
 if (require.main === module) {

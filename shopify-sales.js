@@ -34,6 +34,16 @@ function loadStores() {
       if (path) parseEnvText(fs.readFileSync(path, 'utf8'), src);
     }
   }
+  // Always let the local stores.env fill any creds the primary source is missing
+  // (e.g. the configured SHOPIFY_ENV_PATH lacks a store's CLIENT_ID/SECRET). This
+  // never overrides env vars or STORES_ENV_B64 - it only fills gaps, so Koyeb
+  // (env-var driven) is unaffected while local dev + token self-heal get the full creds.
+  const localEnv = __dirname + '/stores.env';
+  if (fs.existsSync(localEnv)) {
+    const extra = {};
+    parseEnvText(fs.readFileSync(localEnv, 'utf8'), extra);
+    for (const [k, v] of Object.entries(extra)) if (!(k in src)) src[k] = v;
+  }
   const names = new Set();
   for (const k of Object.keys(src)) { const m = k.match(/^(.+)_SHOPIFY_(?:ACCESS_TOKEN|DOMAIN|CLIENT_ID|CLIENT_SECRET)$/); if (m) names.add(m[1]); }
   const stores = {};
