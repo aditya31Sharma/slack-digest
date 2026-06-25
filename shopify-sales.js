@@ -634,7 +634,7 @@ a{color:#7cb8ff;text-decoration:none}a:hover{text-decoration:underline}
 ${statusBanner}
 ${kpisHtml}
 ${body}
-<div class=foot>${hasAds ? 'Ad spend / ROAS / CTR from Meta, brand-named campaigns only (shared catalog ad excluded). ROAS = revenue ÷ ad spend. ' : ''}${report.totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}Brand Sales bot.</div>
+<div class=foot>${hasAds ? 'Total ad spend = all CC2 spend minus shared catalog (cc) ad sets, plus the ForFkSake portfolio. Per-brand = brand-named campaigns. ROAS = revenue ÷ ad spend. ' : ''}${report.totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}Brand Sales bot.</div>
 <script>
 const C={grid:'#1f1f27',tick:'#9a9aa3'};
 const ax=(leg)=>({maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},scales:{x:{ticks:{color:C.tick,maxRotation:60,minRotation:0,autoSkip:false},grid:{color:C.grid}},y:{beginAtZero:true,ticks:{color:C.tick},grid:{color:C.grid}}},plugins:{legend:{display:!!leg,labels:{color:C.tick,boxWidth:12}}}});

@@ -9,6 +9,12 @@ const campaignLink = id => `https://adsmanager.facebook.com/adsmanager/manage/ca
 const norm = s => (s || '').toLowerCase().replace(/[^a-z0-9]/g, '');
 const ymd = d => d.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
 const MIN_IMPR = 200; // ignore tiny-impression campaigns when picking best/worst CTR
+// "cc" ad sets = the shared Culture-Circle catalog/retargeting ads (named ...-cc-pv/cv).
+// These are NOT a brand's own spend, so they're excluded from the Shopify total + per-brand.
+const isCC = name => /(?:^|[^a-z])cc(?:[^a-z]|$)/.test((name || '').toLowerCase());
+// Extra portfolios to add to the total (e.g. ForFkSake's own ad account, which lives
+// outside CC2). Comma-separated act_ ids in META_EXTRA_ACCOUNTS; token needs access.
+const EXTRA_ACCOUNTS = () => (process.env.META_EXTRA_ACCOUNTS || '').split(',').map(s => s.trim()).filter(Boolean).map(a => (a.startsWith('act_') ? a : 'act_' + a));
 
 // Campaign-name → store key. Keys MUST equal the env-prefix store keys (loadStores)
 // so the join to revenue is exact. raw = lowercased name, n = stripped.
@@ -57,12 +63,14 @@ async function fetchMetaInsights(range) {
   const url = `https://graph.facebook.com/v21.0/${AD_ACCOUNT()}/insights`
     + `?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${tr}&time_increment=1&limit=500&access_token=${TOKEN}`;
   const rows = await getAll(url);
-  const byBrand = {}; const account = { spend: 0, clicks: 0, impr: 0 };
+  const byBrand = {}; const account = { spend: 0, clicks: 0, impr: 0, spendExCC: 0, clicksExCC: 0, imprExCC: 0 };
   const campAgg = {}; // brandKey -> { campaignId -> {id,name,link,spend,clicks,impr} }
   for (const r of rows) {
     const sp = parseFloat(r.spend || 0), cl = parseInt(r.clicks || 0), im = parseInt(r.impressions || 0);
     const date = r.date_start;
-    account.spend += sp; account.clicks += cl; account.impr += im;
+    account.spend += sp; account.clicks += cl; account.impr += im;   // raw CC2 total (incl catalog)
+    if (isCC(r.campaign_name)) continue;                              // drop shared "cc"/catalog ad sets
+    account.spendExCC += sp; account.clicksExCC += cl; account.imprExCC += im;
     const k = matchBrand(r.campaign_name);
     if (!k) continue;
     const b = byBrand[k] || (byBrand[k] = { spend: 0, clicks: 0, impr: 0, dailySpend: {} });
@@ -83,7 +91,21 @@ async function fetchMetaInsights(range) {
     b.low = sorted.length > 1 ? sorted[sorted.length - 1] : null;
   }
   account.ctr = account.impr ? account.clicks / account.impr * 100 : 0;
-  return { byBrand, account, since, until };
+  account.ctrExCC = account.imprExCC ? account.clicksExCC / account.imprExCC * 100 : 0;
+  // extra portfolios (e.g. ForFkSake's own ad account) - add their total spend
+  let extraSpend = 0, extraClicks = 0, extraImpr = 0; const extraAccounts = [];
+  for (const acc of EXTRA_ACCOUNTS()) {
+    try {
+      const u = `https://graph.facebook.com/v21.0/${acc}/insights?fields=spend,clicks,impressions&time_range=${tr}&access_token=${TOKEN}`;
+      const rs = await getAll(u);
+      const sp = rs.reduce((s, r) => s + parseFloat(r.spend || 0), 0);
+      extraSpend += sp;
+      extraClicks += rs.reduce((s, r) => s + parseInt(r.clicks || 0), 0);
+      extraImpr += rs.reduce((s, r) => s + parseInt(r.impressions || 0), 0);
+      extraAccounts.push({ account: acc, spend: sp });
+    } catch (e) { extraAccounts.push({ account: acc, error: e.message }); }
+  }
+  return { byBrand, account, since, until, extraSpend, extraClicks, extraImpr, extraAccounts };
 }
 
 // Attach ad spend / ROAS / CTR onto each brand and a report.ads summary.
@@ -100,16 +122,21 @@ function attachAds(report, ins) {
     b.campaigns = a ? a.campaigns : [];            // full campaign list (for single-brand views)
     b.dailySpend = a ? a.dailySpend : {};          // {date: spend} for spend-vs-revenue-over-time
   }
-  const totalSpend = scope.reduce((s, b) => s + (b.adSpend || 0), 0);
-  const totalClicks = scope.reduce((s, b) => s + (b.adClicks || 0), 0);
-  const totalImpr = scope.reduce((s, b) => s + (b.adImpr || 0), 0);
+  // Shopify total ad spend = all CC2 spend EXCLUDING "cc"/catalog ad sets + extra portfolios (ForFkSake).
+  const extraSpend = ins.extraSpend || 0;
+  const totalSpend = (ins.account.spendExCC || 0) + extraSpend;
+  const totalClicks = (ins.account.clicksExCC || 0) + (ins.extraClicks || 0);
+  const totalImpr = (ins.account.imprExCC || 0) + (ins.extraImpr || 0);
   // account-wide best/worst CTR campaign across all in-scope brands (for the headline)
   const allC = scope.flatMap(b => (ins.byBrand[b.key]?.campaigns || []).filter(c => c.impr >= 200));
   allC.sort((a, c) => c.ctr - a.ctr);
   report.ads = {
     hasData: totalSpend > 0,
     totalSpend, totalClicks, totalImpr,
-    accountSpend: ins.account.spend,
+    accountSpend: ins.account.spend,                          // raw CC2 total (incl catalog) - reference
+    cc2ExCC: ins.account.spendExCC || 0,                      // CC2 minus "cc"/catalog
+    catalogSpend: (ins.account.spend || 0) - (ins.account.spendExCC || 0),
+    extraSpend, extraAccounts: ins.extraAccounts || [],       // ForFkSake portfolio etc.
     avgCtr: totalImpr ? totalClicks / totalImpr * 100 : null,
     roas: totalSpend > 0 ? report.totals.revenue / totalSpend : null,
     high: allC[0] || null,
