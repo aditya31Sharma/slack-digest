@@ -8,7 +8,7 @@ const WC_JSON = process.env.WC_JSON_URL
 
 // ── discount config (env-overridable) ──
 const RATE = parseFloat(process.env.MATCHDAY_RATE || '5');    // % per goal
-const CAP = parseFloat(process.env.MATCHDAY_CAP || '60');     // safety ceiling (rarely binds in knockouts)
+const CAP = parseFloat(process.env.MATCHDAY_CAP || '50');     // hard max discount: 50% (>10 goals all map to 50%)
 const FLOOR = parseFloat(process.env.MATCHDAY_FLOOR || '5');  // min discount on a goalless / no-match day
 
 // "13:00 UTC-6" + date -> absolute UTC Date
@@ -54,6 +54,7 @@ async function computeMatchdayDeal({ windowEndUtc = lastNoonIST(), now = new Dat
   }
   const goals = inWindow.reduce((s, x) => s + x.goals, 0);
   const percent = Math.round(clamp(inWindow.length ? goals * RATE : FLOOR, FLOOR, CAP));
+  const capped = (goals * RATE) > CAP;                 // true when >10 goals -> display ">10" x 5% = 50%
   const code = `GOALS${goals}`;                        // dynamic code from the goal value
   const validUntilUtc = new Date(endUtc.getTime() + 86400000 - 60000); // next noon IST minus 1 min
   return {
@@ -61,7 +62,7 @@ async function computeMatchdayDeal({ windowEndUtc = lastNoonIST(), now = new Dat
     windowEndIST: new Date(endUtc.getTime() + 5.5 * 3600 * 1000).toISOString().slice(0, 16).replace('T', ' '),
     matches: inWindow,
     matchCount: inWindow.length,
-    goals, percent, code,
+    goals, percent, code, capped,
     rate: RATE, cap: CAP, floor: FLOOR,
     validFromUtc: endUtc.toISOString(),
     validUntilUtc: validUntilUtc.toISOString(),
@@ -129,7 +130,7 @@ async function deleteExistingCode(code) {
 // Write the deal into a Shop metafield so the storefront section can read it live.
 async function writeMetafield(deal) {
   const { token, domain } = await myugenToken();
-  const value = JSON.stringify({ goals: deal.goals, percent: deal.percent, code: deal.code, matches: deal.matches, validUntil: deal.validUntilUtc });
+  const value = JSON.stringify({ goals: deal.goals, percent: deal.percent, code: deal.code, capped: deal.capped, matches: deal.matches, validUntil: deal.validUntilUtc });
   const q = `mutation($m:[MetafieldsSetInput!]!){ metafieldsSet(metafields:$m){ userErrors{ message } } }`;
   const shopQ = `{ shop { id } }`;
   let r = await fetch(`https://${domain}/admin/api/2024-04/graphql.json`, { method: 'POST', headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' }, body: JSON.stringify({ query: shopQ }) });
