@@ -165,7 +165,7 @@ function startMatchdayCron() {
 const webApp = express();
 const PORT = process.env.PORT || 3000;
 webApp.get('/healthz', (_q, r) => r.json({ ok: true, configured: isConfigured(), time: toIST() }));
-webApp.get('/', (_q, r) => r.type('text').send(`Brand Sales Slack bot\nconfigured: ${isConfigured()}\nbrands: ${Object.keys(loadStores()).length}\ntime: ${toIST()} IST`));
+webApp.get('/', (_q, r) => r.type('text').send(`House of CC Analyser\nconfigured: ${isConfigured()}\nbrands: ${Object.keys(loadStores()).length}\ntime: ${toIST()} IST`));
 // External cron trigger for the noon digest (bulletproof: the HTTP hit also wakes
 // the instance if it slept). Protect with CRON_KEY. ?force=1 ignores the once-a-day guard.
 webApp.get('/cron/digest', async (req, res) => {

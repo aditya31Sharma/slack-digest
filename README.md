@@ -1,4 +1,4 @@
-# Slack Digest
+# House of CC Analyser
 
 > AI-powered summaries of your Slack channels, delivered every 3 hours via DM.
 

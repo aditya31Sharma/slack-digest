@@ -297,7 +297,7 @@ async function fetchAllBrandSales(rangeText, { only = null } = {}) {
 function helpText() {
   const keys = Object.keys(loadStores()).sort();
   const brands = keys.map(k => `• *${prettyName(k)}* — \`/${slugify(k)}\``).join('\n');
-  return `*📊 Brand Sales — help*
+  return `*📊 House of CC Analyser — help*
 
 *digest* — quick numbers in Slack   \`{brands} digest {date/range}\`
 • \`digest\` — yesterday, all brands
@@ -366,7 +366,7 @@ function salesBlocks(report, { brandFilter = null, isAuto = false } = {}) {
   const { range, ok, noAccess, errored, byCcy, storeCount } = report;
   const rows = brandFilter ? ok.filter(r => r.key === brandFilter) : ok;
   const blocks = [
-    { type: 'header', text: { type: 'plain_text', text: `${isAuto ? '📊 Daily sales' : '💰 Brand sales'} · ${range.label}`, emoji: true } },
+    { type: 'header', text: { type: 'plain_text', text: `${isAuto ? '📊' : '💰'} House of CC Analyser · ${range.label}`, emoji: true } },
     { type: 'context', elements: [{ type: 'mrkdwn', text: `🕐 as of ${toIST()} IST` }] },
     { type: 'divider' },
   ];
@@ -634,7 +634,7 @@ a{color:#7cb8ff;text-decoration:none}a:hover{text-decoration:underline}
 ${statusBanner}
 ${kpisHtml}
 ${body}
-<div class=foot>${hasAds ? 'Total ad spend = all CC2 spend minus shared catalog (cc) ad sets, plus the ForFkSake portfolio. Per-brand = brand-named campaigns. ROAS = revenue ÷ ad spend. ' : ''}${report.totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}Brand Sales bot.</div>
+<div class=foot>${hasAds ? 'Total ad spend = all CC2 spend minus shared catalog (cc) ad sets, plus the ForFkSake portfolio. Per-brand = brand-named campaigns. ROAS = revenue ÷ ad spend. ' : ''}${report.totals.sessionsKnown ? '' : 'Sessions n/a where the store token lacks read_analytics. '}House of CC Analyser.</div>
 <script>
 const C={grid:'#1f1f27',tick:'#9a9aa3'};
 const ax=(leg)=>({maintainAspectRatio:false,interaction:{intersect:false,mode:'index'},scales:{x:{ticks:{color:C.tick,maxRotation:60,minRotation:0,autoSkip:false},grid:{color:C.grid}},y:{beginAtZero:true,ticks:{color:C.tick},grid:{color:C.grid}}},plugins:{legend:{display:!!leg,labels:{color:C.tick,boxWidth:12}}}});
