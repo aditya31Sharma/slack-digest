@@ -132,10 +132,24 @@ async function sendDailyDigest({ force = false } = {}) {
   if (!force && _lastDigestYMD === today) return { sent: false, reason: 'already sent today' };
   _lastDigestYMD = today;
   const client = new WebClient(process.env.SLACK_BOT_TOKEN);
-  console.log(`⏰  Daily digest at ${toIST()} (yesterday)`);
-  const report = await fetchDigest({ brandKeys: [], range: resolveRange('yesterday'), withSessions: true, withAds: true });
-  await client.chat.postMessage({ channel: process.env.SLACK_USER_ID, blocks: digestBlocks(report), text: 'Daily brand digest' });
-  return { sent: true, revenue: report.totals.revenue };
+  console.log(`⏰  Daily newsletter at ${toIST()} (yesterday)`);
+  // Newsletter = one mobile-openable link to the dashboard. A light digest gives the
+  // one-line teaser hook; the full interactive view lives at the dashboard URL.
+  const report = await fetchDigest({ brandKeys: [], range: resolveRange('yesterday') });
+  const url = dashboardUrl();
+  const t = report.totals;
+  const teaser = `Yesterday: *₹${Math.round(t.revenue).toLocaleString('en-IN')}* across *${t.orders}* orders · ${report.brands.length} brands`;
+  await client.chat.postMessage({
+    channel: process.env.SLACK_USER_ID,
+    text: `Your daily store report is ready → ${url}`,
+    blocks: [
+      { type: 'header', text: { type: 'plain_text', text: '📊 House of CC Analyser', emoji: true } },
+      { type: 'section', text: { type: 'mrkdwn', text: `Your daily store report is ready.\n${teaser}` } },
+      { type: 'actions', elements: [{ type: 'button', style: 'primary', text: { type: 'plain_text', text: '📈 Open dashboard', emoji: true }, url }] },
+      { type: 'context', elements: [{ type: 'mrkdwn', text: `All brands · last day · choose brands, custom dates & per-brand deep dives inside · ${url}` }] },
+    ],
+  });
+  return { sent: true, revenue: report.totals.revenue, url };
 }
 function startScheduler() {
   if (process.env.DISABLE_LOCAL_CRON === 'true') { console.log('⏸  Local cron disabled'); return; }
@@ -176,6 +190,24 @@ webApp.get('/cron/digest', async (req, res) => {
 webApp.get('/api/sales', async (req, res) => {
   try { res.json(await fetchAllBrandSales(req.query.range || 'today', req.query.brand ? { only: storeKeyFromText(req.query.brand) } : {})); }
   catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ── Standalone dashboard (fixed URL) ────────────────────────────────────────
+function dashboardUrl() {
+  if (process.env.DASHBOARD_URL) return process.env.DASHBOARD_URL;
+  const base = (process.env.REPORT_BASE_URL || '').replace(/\/report.*$/, '');
+  return (base || `http://localhost:${PORT}`) + '/dashboard';
+}
+// The interactive dashboard page (all brands, custom range, per-brand deep dive).
+webApp.get('/dashboard', (_q, res) => res.sendFile(__dirname + '/public/dashboard.html'));
+// Full dataset the dashboard reads: every brand + per-brand detail + ads, for a range.
+// ?range=yesterday|today|7d|30d|this month|all|DD.MM.YY-DD.MM.YY
+webApp.get('/api/dashboard', async (req, res) => {
+  try {
+    res.set('Cache-Control', 'no-store');
+    const report = await fetchDigest({ brandKeys: [], range: resolveRange(req.query.range || 'yesterday'), withSessions: true, withAds: true });
+    res.json(report);
+  } catch (e) { res.status(500).json({ error: e.message }); }
 });
 // HTML report by query, e.g. /report?q=myugen%20deepdigest%2030d  (mobile-friendly link)
 webApp.get('/report', async (req, res) => {
