@@ -38,6 +38,14 @@
   .btn{background:var(--accent);border:0;color:#fff;font:700 12.5px inherit;padding:9px 15px;border-radius:10px;cursor:pointer}
   .btn.ghost{background:var(--surface);border:1px solid var(--line);color:var(--txt)}
 
+  /* platform mode toggle */
+  .modebar{padding:16px 0 2px}
+  .modeseg{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px;gap:4px}
+  .seg{border:0;background:transparent;color:var(--muted);font:700 13px inherit;padding:10px 20px;border-radius:999px;cursor:pointer;transition:.15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+  .seg.on{background:var(--txt);color:#000}
+  .seg:hover:not(.on){color:var(--txt)}
+  @media(max-width:520px){.modeseg{display:flex;width:100%}.seg{flex:1;text-align:center;padding:10px 8px}}
+
   /* brand picker */
   .bpick{position:relative;margin-left:auto}
   .bpick__btn{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);color:var(--txt);font:600 12.5px inherit;padding:9px 13px;border-radius:999px;cursor:pointer}
@@ -101,6 +109,12 @@
 </header>
 
 <div class="wrap">
+  <div class="modebar">
+    <div class="modeseg" id="modeSeg">
+      <button class="seg on" data-platform="shopify">Shopify</button>
+      <button class="seg" data-platform="cc">Culture Circle</button>
+    </div>
+  </div>
   <div class="controls">
     <div class="chips" id="rangeChips">
       <button class="chip on" data-range="yesterday">Yesterday</button>
@@ -134,7 +148,7 @@ const pct = n => (n == null ? '—' : n.toFixed(2) + '%');
 const roasFmt = n => (n == null ? '—' : n.toFixed(2) + 'x');
 const COLORS = ['#6366f1','#22d3ee','#34d399','#fbbf24','#fb7185','#a78bfa','#f472b6','#4ade80','#facc15','#38bdf8','#fb923c','#c084fc','#2dd4bf','#e879f9','#60a5fa','#f87171'];
 
-const state = { rangeText:'yesterday', report:null, selected:null, tab:'overview', loading:false };
+const state = { platform:'shopify', rangeText:'yesterday', report:null, selected:null, tab:'overview', loading:false };
 const charts = {};
 function destroyCharts(){ for(const k in charts){ try{charts[k].destroy();}catch(e){} delete charts[k]; } }
 function el(id){ return document.getElementById(id); }
@@ -144,11 +158,18 @@ function ddmmyy(iso){ const [y,m,d]=iso.split('-'); return `${d}.${m}.${y.slice(
 async function load(){
   state.loading = true; el('view').innerHTML = '<div class="spinner"></div>'; destroyCharts();
   try{
-    const r = await fetch(`${API}?range=${encodeURIComponent(state.rangeText)}`);
+    const r = await fetch(`${API}?platform=${state.platform}&range=${encodeURIComponent(state.rangeText)}`);
     const data = await r.json();
     if(data.error) throw new Error(data.error);
     state.report = data;
     el('rangeLabel').textContent = (data.range && data.range.label) || '';
+    // platform source not wired yet -> clean message, never a broken page
+    if(data.connected === false){
+      el('tabs').innerHTML = ''; el('bpickLabel').textContent = '—'; el('bpickPanel').innerHTML = '';
+      el('view').innerHTML = `<div class="empty">Culture Circle data source isn't connected yet.<br><span class="small">Send me the CC sales/orders source and it lights up here — same metrics, same views, same charts.</span></div>`;
+      el('foot').textContent = `Culture Circle · ${(data.range&&data.range.label)||''} · awaiting data source`;
+      state.loading = false; return;
+    }
     // default selection = all brands (first load only)
     if(state.selected === null) state.selected = new Set(data.brands.map(b=>b.key));
     else state.selected = new Set([...state.selected].filter(k=>data.brands.some(b=>b.key===k)));
@@ -363,6 +384,15 @@ el('applyCustom').onclick=()=>{
   if(!f||!t){ alert('Pick both dates'); return; }
   state.rangeText = `${ddmmyy(f)}-${ddmmyy(t)}`; load();
 };
+el('modeSeg').querySelectorAll('.seg').forEach(s=>s.onclick=()=>{
+  if(s.classList.contains('on')) return;
+  el('modeSeg').querySelectorAll('.seg').forEach(x=>x.classList.remove('on'));
+  s.classList.add('on');
+  state.platform = s.dataset.platform;
+  state.selected = null;   // brand sets can differ per platform
+  state.tab = 'overview';
+  load();
+});
 el('bpickBtn').onclick=()=>el('bpickPanel').classList.toggle('show');
 document.addEventListener('click',e=>{ if(!e.target.closest('.bpick')) el('bpickPanel').classList.remove('show'); });
 

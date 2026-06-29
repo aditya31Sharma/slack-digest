@@ -202,10 +202,18 @@ function dashboardUrl() {
 webApp.get('/dashboard', (_q, res) => res.sendFile(__dirname + '/public/dashboard.html'));
 // Full dataset the dashboard reads: every brand + per-brand detail + ads, for a range.
 // ?range=yesterday|today|7d|30d|this month|all|DD.MM.YY-DD.MM.YY
+// ?platform=shopify (default) | cc  — selects which platform's sales to report.
 webApp.get('/api/dashboard', async (req, res) => {
   try {
     res.set('Cache-Control', 'no-store');
-    const report = await fetchDigest({ brandKeys: [], range: resolveRange(req.query.range || 'yesterday'), withSessions: true, withAds: true });
+    const range = resolveRange(req.query.range || 'yesterday');
+    const platform = (req.query.platform || 'shopify').toLowerCase();
+    if (platform === 'cc' || platform === 'culture-circle' || platform === 'culturecircle') {
+      const report = await require('./cc-sales').fetchCCDigest({ range });
+      return res.json(report);
+    }
+    const report = await fetchDigest({ brandKeys: [], range, withSessions: true, withAds: true });
+    report.platform = 'shopify'; report.connected = true;
     res.json(report);
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
