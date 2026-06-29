@@ -210,7 +210,8 @@ function buildBrandPicker(){
 
 /* ---------- tabs ---------- */
 function buildTabs(){
-  let html = `<button class="tab ${state.tab==='overview'?'on':''}" data-tab="overview">📊 Overview</button>`;
+  let html = `<button class="tab ${state.tab==='overview'?'on':''}" data-tab="overview">📊 Overview</button>`
+    + `<button class="tab ${state.tab==='export'?'on':''}" data-tab="export">⬇ Export</button>`;
   for(const b of selectedBrands()){
     html += `<button class="tab ${state.tab===b.key?'on':''}" data-tab="${b.key}">${esc(b.brand)}</button>`;
   }
@@ -235,8 +236,35 @@ function agg(brands){
 /* ---------- render ---------- */
 function render(){
   if(state.tab==='overview') renderOverview();
+  else if(state.tab==='export') renderExport();
   else renderBrand(state.tab);
   el('foot').textContent = `Live from Shopify + Meta · ${state.report.range.label} · ${new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})} IST`;
+}
+
+function renderExport(){
+  const all = state.report.brands, brands = selectedBrands();
+  const allSel = state.selected.size === all.length;
+  const estOrders = brands.reduce((s,b)=>s+(b.orders||0),0);
+  el('view').innerHTML = `<div class="card">
+    <h3>Export orders → CSV</h3>
+    <p class="muted small" style="margin:0 0 16px;line-height:1.5">One row per order — customer, items, totals, payment &amp; fulfillment status — pulled live from Shopify for the date range and brands you've selected. Set the date with the chips at the top (Today / Yesterday / 7D / 30D / This month / <b>Custom</b> date or range) and pick brands from the <b>Brands</b> menu.</p>
+    <div class="kpis" style="margin-bottom:14px">
+      ${kpi('Date range', esc(state.report.range.label))}
+      ${kpi('Brands', allSel?('All · '+all.length):(brands.length+' selected'))}
+      ${kpi('Orders (approx.)', num(estOrders))}
+    </div>
+    <div class="muted small" style="margin-bottom:18px">Including: ${allSel?'all brands':brands.map(b=>esc(b.brand)).join(', ')}</div>
+    <button class="btn" id="dlcsv" ${state.platform!=='shopify'?'disabled style="opacity:.5"':''}>⬇  Download CSV</button>
+    <span class="muted small" id="dlnote" style="margin-left:12px"></span>
+    ${state.platform!=='shopify'?'<div class="muted small" style="margin-top:12px">Culture Circle export turns on once its data source is connected.</div>':''}
+  </div>`;
+  const btn = el('dlcsv');
+  if(btn && state.platform==='shopify') btn.onclick = ()=>{
+    const url = `/api/export.csv?platform=${state.platform}&range=${encodeURIComponent(state.rangeText)}&brands=${encodeURIComponent([...state.selected].join(','))}`;
+    el('dlnote').textContent = 'Preparing… large ranges can take a few seconds.';
+    const a = document.createElement('a'); a.href = url; a.download = ''; document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(()=>{ el('dlnote').textContent = 'Download started ✓'; }, 2000);
+  };
 }
 
 function kpi(label, value, sub, cls){ return `<div class="kpi"><div class="kpi__l">${label}</div><div class="kpi__v ${cls||''}">${value}</div>${sub?`<div class="kpi__s">${sub}</div>`:''}</div>`; }

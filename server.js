@@ -17,7 +17,7 @@ const cron = require('node-cron');
 const {
   fetchAllBrandSales, loadStores, prettyName, slugify, storeKeyFromText, salesBlocks, toIST,
   parseCommand, fetchDigest, digestBlocks, buildDeepDigestHtml, resolveRange, helpText,
-  trendBlocks, reportLink,
+  trendBlocks, reportLink, fetchOrdersForExport, ordersToCsv,
 } = require('./shopify-sales');
 
 function isConfigured() {
@@ -216,6 +216,24 @@ webApp.get('/api/dashboard', async (req, res) => {
     report.platform = 'shopify'; report.connected = true;
     res.json(report);
   } catch (e) { res.status(500).json({ error: e.message }); }
+});
+// Orders CSV export: ?platform=shopify|cc&range=...&brands=KEY1,KEY2 (brands omitted = all).
+webApp.get('/api/export.csv', async (req, res) => {
+  try {
+    const range = resolveRange(req.query.range || 'today');
+    const platform = (req.query.platform || 'shopify').toLowerCase();
+    const brandKeys = (req.query.brands || '').split(',').map(s => s.trim()).filter(Boolean);
+    if (['cc', 'culture-circle', 'culturecircle'].includes(platform)) {
+      return res.status(400).type('text').send('Culture Circle export is not connected yet. Send the CC orders source to enable it.');
+    }
+    const { rows, errors } = await fetchOrdersForExport({ brandKeys, range });
+    const csv = ordersToCsv(rows);
+    const tag = (range.label || 'orders').replace(/[^\w]+/g, '-').toLowerCase();
+    res.set('Content-Type', 'text/csv; charset=utf-8');
+    res.set('Content-Disposition', `attachment; filename="orders-${tag}-${rows.length}.csv"`);
+    if (errors.length) res.set('X-Export-Warnings', errors.join('; ').slice(0, 400));
+    res.send(csv);
+  } catch (e) { res.status(500).type('text').send('export error: ' + e.message); }
 });
 // HTML report by query, e.g. /report?q=myugen%20deepdigest%2030d  (mobile-friendly link)
 webApp.get('/report', async (req, res) => {

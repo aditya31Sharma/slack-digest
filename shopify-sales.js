@@ -642,8 +642,85 @@ ${scripts}
 </script></div></body></html>`;
 }
 
+// ── Orders export: one flat row per order, for CSV download ──────────────────
+async function fetchOrders(store, range) {
+  const domain = store.domain;
+  let token;
+  try { token = await resolveToken(store); } catch { return { error: 'auth_failed', rows: [] }; }
+  if (!token) return { error: 'no_token', rows: [] };
+  const params = new URLSearchParams({ status: 'any', limit: '250',
+    fields: 'id,name,email,created_at,financial_status,fulfillment_status,currency,subtotal_price,total_discounts,total_tax,total_price,line_items,customer,shipping_address,cancelled_at' });
+  if (range.from) params.set('created_at_min', range.from.toISOString());
+  if (range.to) params.set('created_at_max', range.to.toISOString());
+  let url = `orders.json?${params.toString()}`;
+  const rows = []; let guard = 0, reminted = false;
+  while (url && guard++ < 600) {
+    const res = await apiGet(domain, token, url);
+    if (res.status === 401 || res.status === 403) {
+      if (!reminted && store.clientId && store.clientSecret) { reminted = true; invalidateToken(domain); try { token = await mintToken(store); guard--; continue; } catch { /* fall through */ } }
+      return { error: 'no_orders_scope', rows };
+    }
+    if (res.status === 429) { await new Promise(r => setTimeout(r, 2000)); continue; }
+    if (!res.ok) return { error: `http_${res.status}`, rows };
+    const data = await res.json();
+    for (const o of (data.orders || [])) {
+      const items = (o.line_items || []).reduce((s, li) => s + parseInt(li.quantity || 0), 0);
+      const products = (o.line_items || []).map(li => `${(li.title || '').replace(/\s+/g, ' ').trim()}${li.variant_title ? ' / ' + li.variant_title : ''} x${li.quantity}`).join(' | ');
+      const c = o.customer || {}, sa = o.shipping_address || {};
+      rows.push({
+        order: o.name || ('#' + o.id),
+        date: new Date(o.created_at).toLocaleString('en-GB', { timeZone: 'Asia/Kolkata', year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit' }),
+        customer: [c.first_name, c.last_name].filter(Boolean).join(' ') || sa.name || '',
+        email: o.email || c.email || '',
+        city: sa.city || '', province: sa.province || '',
+        items, products,
+        subtotal: o.subtotal_price || '', discount: o.total_discounts || '', tax: o.total_tax || '', total: o.total_price || '',
+        currency: o.currency || '',
+        financial_status: o.financial_status || '', fulfillment_status: o.fulfillment_status || 'unfulfilled',
+        cancelled: o.cancelled_at ? 'yes' : 'no',
+      });
+    }
+    const link = res.headers.get('link') || res.headers.get('Link') || '';
+    const m = link.match(/<([^>]+)>;\s*rel="next"/);
+    url = m ? m[1].split(`/admin/api/${API_VERSION}/`)[1] : null;
+  }
+  return { rows };
+}
+
+// Pull orders for the selected brands (all if none given) and tag each row with the brand.
+async function fetchOrdersForExport({ brandKeys = [], range }) {
+  const stores = loadStores();
+  const keys = (brandKeys.length ? brandKeys.filter(k => stores[k]) : Object.keys(stores));
+  const out = []; const errors = [];
+  const LIMIT = 4; let i = 0;
+  async function worker() {
+    while (i < keys.length) {
+      const key = keys[i++];
+      try { const r = await fetchOrders(stores[key], range); if (r.error) errors.push(`${prettyName(key)}: ${r.error}`); for (const row of (r.rows || [])) out.push({ brand: prettyName(key), ...row }); }
+      catch (e) { errors.push(`${prettyName(key)}: ${e.message}`); }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(LIMIT, keys.length || 1) }, worker));
+  out.sort((a, b) => (a.brand === b.brand ? 0 : a.brand < b.brand ? -1 : 1));
+  return { rows: out, errors };
+}
+
+const EXPORT_COLUMNS = [
+  ['brand', 'Brand'], ['order', 'Order'], ['date', 'Date (IST)'], ['customer', 'Customer'], ['email', 'Email'],
+  ['city', 'City'], ['province', 'State'], ['items', 'Items'], ['products', 'Products'],
+  ['subtotal', 'Subtotal'], ['discount', 'Discount'], ['tax', 'Tax'], ['total', 'Total'], ['currency', 'Currency'],
+  ['financial_status', 'Payment'], ['fulfillment_status', 'Fulfillment'], ['cancelled', 'Cancelled'],
+];
+function ordersToCsv(rows) {
+  const esc = v => { v = v == null ? '' : String(v); return /[",\n\r]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const head = EXPORT_COLUMNS.map(c => esc(c[1])).join(',');
+  const body = rows.map(r => EXPORT_COLUMNS.map(c => esc(r[c[0]])).join(',')).join('\r\n');
+  return '﻿' + head + '\r\n' + body; // BOM so Excel reads UTF-8 + ₹ correctly
+}
+
 module.exports = {
   loadStores, prettyName, slugify, storeKeyFromText, toIST, resolveRange, parseCommand,
   fetchDigest, fetchAllBrandSales, fmtMoney, fmtNum, salesBlocks, digestBlocks, buildDeepDigestHtml, helpText,
   trendBlocks, sparkline, reportLink,
+  fetchOrdersForExport, ordersToCsv,
 };
