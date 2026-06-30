@@ -222,7 +222,11 @@ async function storeMetrics(store, range) {
   return { orders, revenue, maxOrder, currency, daily, aov: orders ? revenue / orders : 0, bestSeller: topProducts[0] || null, topProducts };
 }
 
-// Best-effort sessions via ShopifyQL (needs read_analytics scope; null if unavailable).
+// Sessions via ShopifyQL. shopifyqlQuery was removed ~2024-07 and REINTRODUCED in 2025-10
+// with new syntax (SHOW sessions, not sum(); rows = objects; parseErrors is a String).
+// Pinned to 2025-10 so the orders API can stay on API_VERSION. Needs read_analytics.
+// Returns { total, daily:{ 'YYYY-MM-DD': sessions } } or null.
+const SESSIONS_API_VERSION = '2025-10';
 async function fetchSessions(store, range) {
   try {
     const domain = store.domain;
@@ -230,16 +234,23 @@ async function fetchSessions(store, range) {
     if (!token || !range.from) return null;
     const since = istYMD(range.from);
     const until = istYMD(new Date((range.to ? range.to.getTime() : Date.now()) - 1));
-    const ql = `FROM sessions SHOW sum(sessions) AS s SINCE ${since} UNTIL ${until}`;
-    const res = await fetch(`https://${domain}/admin/api/${API_VERSION}/graphql.json`, {
+    const ql = `FROM sessions SHOW sessions GROUP BY day SINCE ${since} UNTIL ${until}`;
+    const res = await fetch(`https://${domain}/admin/api/${SESSIONS_API_VERSION}/graphql.json`, {
       method: 'POST', headers: { 'X-Shopify-Access-Token': token, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ query: `{ shopifyqlQuery(query: ${JSON.stringify(ql)}) { __typename ... on TableResponse { tableData { rowData } } } }` }),
+      body: JSON.stringify({ query: `{ shopifyqlQuery(query: ${JSON.stringify(ql)}) { tableData { rows } parseErrors } }` }),
     });
     if (!res.ok) return null;
     const j = await res.json();
-    const rd = j?.data?.shopifyqlQuery?.tableData?.rowData;
-    if (rd && rd[0] && rd[0][0] != null) return parseInt(rd[0][0]) || 0;
-    return null;
+    const rows = j?.data?.shopifyqlQuery?.tableData?.rows;
+    if (!Array.isArray(rows)) return null;
+    const daily = {}; let total = 0;
+    for (const row of rows) {                       // row = { day:'2026-06-26', sessions:'4570' }
+      const day = String(row.day || '').slice(0, 10);
+      const s = parseInt(row.sessions != null ? row.sessions : 0) || 0;
+      if (day) daily[day] = (daily[day] || 0) + s;
+      total += s;
+    }
+    return { total, daily };
   } catch { return null; }
 }
 
@@ -254,9 +265,12 @@ async function fetchDigest({ brandKeys = [], range, withSessions = false, withAd
       const key = keys[i++];
       try {
         const m = await storeMetrics(stores[key], range);
-        let sessions = null;
-        if (withSessions && !m.error) sessions = await fetchSessions(stores[key], range);
-        out.push({ key, brand: prettyName(key), slug: slugify(key), sessions, ...m });
+        let sessions = null, dailySessions = {};
+        if (withSessions && !m.error) {
+          const sess = await fetchSessions(stores[key], range);
+          if (sess) { sessions = sess.total; dailySessions = sess.daily; }
+        }
+        out.push({ key, brand: prettyName(key), slug: slugify(key), sessions, dailySessions, ...m });
       } catch (e) { out.push({ key, brand: prettyName(key), slug: slugify(key), error: e.message }); }
     }
   }

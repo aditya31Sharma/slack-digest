@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a0c">
-<meta name="dash-build" content="cockpit-2">
+<meta name="dash-build" content="cockpit-3">
 <title>House of CC — Cockpit</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -393,6 +393,8 @@ function renderOverview(){
     + (hasAds?kpiCard('Ad spend', moneyShort(a.adSpend), pa?deltaPill(a.adSpend,pa.adSpend):'', ''):'')
     + (hasAds?kpiCard('ROAS', roasFmt(a.roas), pa&&pa.roas!=null?deltaPill(a.roas,pa.roas):'', '', a.roas!=null?(a.roas>=1?'pos':'neg'):''):'')
     + (hasAds?kpiCard('Avg CTR', pct(a.ctr), pa&&pa.ctr!=null?deltaPill(a.ctr,pa.ctr):'', ''):'')
+    + (a.sessKnown?kpiCard('Conv. rate', pct(a.cvr), pa&&pa.cvr!=null?deltaPill(a.cvr,pa.cvr):'', ''):'')
+    + (a.sessKnown?kpiCard('Sessions', num(a.sessions), pa&&pa.sessKnown?deltaPill(a.sessions,pa.sessions):'', ''):'')
     + '</div>';
 
   // ---- movers ----
@@ -533,9 +535,13 @@ function renderBrand(key){
     + (hasAds?kpiCard('Ad spend', moneyShort(b.adSpend), p?deltaPill(b.adSpend,p.adSpend):'', ''):'')
     + (hasAds?kpiCard('ROAS', roasFmt(b.roas), p&&p.roas!=null?deltaPill(b.roas,p.roas):'', '', b.roas!=null?(b.roas>=1?'pos':'neg'):''):'')
     + (hasAds?kpiCard('CTR', pct(b.ctr), p&&p.ctr!=null?deltaPill(b.ctr,p.ctr):'', ''):'')
+    + (b.sessions!=null?kpiCard('Conv. rate', pct(b.sessions?b.orders/b.sessions*100:null), (p&&p.sessions)?deltaPill(b.orders/b.sessions*100, p.orders/p.sessions*100):'', ''):'')
+    + (b.sessions!=null?kpiCard('Sessions', num(b.sessions), p&&p.sessions!=null?deltaPill(b.sessions,p.sessions):'', ''):'')
     + '</div>';
 
   html += '<div class="card"><h3>Daily revenue & orders</h3><div class="chartbox tall"><canvas id="cBd"></canvas></div></div>';
+  if(b.dailySessions && Object.keys(b.dailySessions).length)
+    html += '<div class="card"><h3>Daily conversion rate</h3><div class="chartbox"><canvas id="cCvrB"></canvas></div></div>';
   if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length)
     html += '<div class="grid2">'
       + '<div class="card"><h3>Daily ROAS</h3><div class="chartbox"><canvas id="cRoasB"></canvas></div></div>'
@@ -560,6 +566,12 @@ function renderBrand(key){
       { type:'line', label:'Revenue', data:days.map(d=>Math.round(b.daily[d].revenue)), borderColor:'#3ddc97', backgroundColor:'rgba(61,220,151,.12)', fill:true, tension:.3, pointRadius:0, yAxisID:'y', order:0 },
       { type:'bar', label:'Orders', data:days.map(d=>b.daily[d].orders), backgroundColor:'rgba(245,177,61,.7)', borderRadius:4, yAxisID:'y1', order:1 } ] },
     options:lineOpts(true) });
+  if(b.dailySessions && Object.keys(b.dailySessions).length){
+    const cvrDays=[...new Set(Object.keys(b.dailySessions))].sort();
+    charts.cvrB = new Chart(el('cCvrB'), { type:'line',
+      data:{ labels:cvrDays, datasets:[{ label:'Conv. rate', data:cvrDays.map(d=>{ const s=b.dailySessions[d]||0; const o=(b.daily[d]||{}).orders||0; return s>0?+((o/s)*100).toFixed(2):null; }), borderColor:'#3ddc97', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
+      options:pctLineOpts('Conv. rate') });
+  }
   if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length){
     const ds = new Set([...days, ...Object.keys(b.dailySpend)]); const dd=[...ds].sort();
     charts.roasB = new Chart(el('cRoasB'), { type:'line',
@@ -568,7 +580,7 @@ function renderBrand(key){
     const ctrDays=[...new Set(Object.keys(b.dailyImpr||{}))].sort();
     charts.ctrB = new Chart(el('cCtrB'), { type:'line',
       data:{ labels:ctrDays, datasets:[{ label:'CTR', data:ctrDays.map(d=>{ const im=(b.dailyImpr||{})[d]||0; const cl=(b.dailyClicks||{})[d]||0; return im>0?+((cl/im)*100).toFixed(2):null; }), borderColor:'#7c8cf8', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
-      options:ctrLineOpts() });
+      options:pctLineOpts('CTR') });
     charts.bsr = new Chart(el('cBsr'), { type:'line',
       data:{ labels:dd, datasets:[
         { label:'Revenue', data:dd.map(d=>Math.round((b.daily[d]||{}).revenue||0)), borderColor:'#3ddc97', backgroundColor:'rgba(61,220,151,.12)', fill:true, tension:.3, pointRadius:0 },
@@ -599,10 +611,10 @@ function roasLineOpts(){
     scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
       y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+'x'}, suggestedMin:0, suggestedMax:5 } } };
 }
-function ctrLineOpts(){
+function pctLineOpts(label){
   return { responsive:true, maintainAspectRatio:false,
     plugins:{ legend:{ display:false },
-      tooltip:{ callbacks:{ label:c=>`CTR: ${c.parsed.y}%` } } },
+      tooltip:{ callbacks:{ label:c=>`${label}: ${c.parsed.y}%` } } },
     scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
       y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+'%'}, suggestedMin:0 } } };
 }
