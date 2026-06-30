@@ -73,9 +73,13 @@ async function fetchMetaInsights(range) {
     account.spendExCC += sp; account.clicksExCC += cl; account.imprExCC += im;
     const k = matchBrand(r.campaign_name);
     if (!k) continue;
-    const b = byBrand[k] || (byBrand[k] = { spend: 0, clicks: 0, impr: 0, dailySpend: {} });
+    const b = byBrand[k] || (byBrand[k] = { spend: 0, clicks: 0, impr: 0, dailySpend: {}, dailyClicks: {}, dailyImpr: {} });
     b.spend += sp; b.clicks += cl; b.impr += im;
-    if (date) b.dailySpend[date] = (b.dailySpend[date] || 0) + sp;
+    if (date) {
+      b.dailySpend[date] = (b.dailySpend[date] || 0) + sp;
+      b.dailyClicks[date] = (b.dailyClicks[date] || 0) + cl;   // for daily CTR
+      b.dailyImpr[date] = (b.dailyImpr[date] || 0) + im;       // for daily CTR
+    }
     const cb = campAgg[k] || (campAgg[k] = {});
     const c = cb[r.campaign_id] || (cb[r.campaign_id] = { id: r.campaign_id, name: r.campaign_name, link: campaignLink(r.campaign_id), spend: 0, clicks: 0, impr: 0 });
     c.spend += sp; c.clicks += cl; c.impr += im;
@@ -121,6 +125,8 @@ function attachAds(report, ins) {
     b.worstCampaign = a && a.low ? a.low : null;   // lowest-CTR campaign (with link)
     b.campaigns = a ? a.campaigns : [];            // full campaign list (for single-brand views)
     b.dailySpend = a ? a.dailySpend : {};          // {date: spend} for spend-vs-revenue-over-time
+    b.dailyClicks = a ? a.dailyClicks : {};        // {date: clicks} for daily CTR
+    b.dailyImpr = a ? a.dailyImpr : {};            // {date: impressions} for daily CTR
   }
   // Shopify total ad spend = all CC2 spend EXCLUDING "cc"/catalog ad sets + extra portfolios (ForFkSake).
   const extraSpend = ins.extraSpend || 0;

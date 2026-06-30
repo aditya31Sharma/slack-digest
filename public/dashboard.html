@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0a0a0c">
-<meta name="dash-build" content="cockpit-1">
+<meta name="dash-build" content="cockpit-2">
 <title>House of CC — Cockpit</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -537,7 +537,10 @@ function renderBrand(key){
 
   html += '<div class="card"><h3>Daily revenue & orders</h3><div class="chartbox tall"><canvas id="cBd"></canvas></div></div>';
   if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length)
-    html += '<div class="card"><h3>Daily ROAS</h3><div class="chartbox"><canvas id="cRoasB"></canvas></div></div>'
+    html += '<div class="grid2">'
+      + '<div class="card"><h3>Daily ROAS</h3><div class="chartbox"><canvas id="cRoasB"></canvas></div></div>'
+      + '<div class="card"><h3>Daily CTR</h3><div class="chartbox"><canvas id="cCtrB"></canvas></div></div>'
+      + '</div>'
       + '<div class="card"><h3>Ad spend vs revenue over time</h3><div class="chartbox"><canvas id="cBsr"></canvas></div></div>';
 
   if(b.bestSeller || (b.topProducts&&b.topProducts.length)){
@@ -562,6 +565,10 @@ function renderBrand(key){
     charts.roasB = new Chart(el('cRoasB'), { type:'line',
       data:{ labels:dd, datasets:[{ label:'ROAS', data:dd.map(d=>{ const sp=b.dailySpend[d]||0; const rv=(b.daily[d]||{}).revenue||0; return sp>0?+(rv/sp).toFixed(2):null; }), borderColor:'#f5b13d', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
       options:roasLineOpts() });
+    const ctrDays=[...new Set(Object.keys(b.dailyImpr||{}))].sort();
+    charts.ctrB = new Chart(el('cCtrB'), { type:'line',
+      data:{ labels:ctrDays, datasets:[{ label:'CTR', data:ctrDays.map(d=>{ const im=(b.dailyImpr||{})[d]||0; const cl=(b.dailyClicks||{})[d]||0; return im>0?+((cl/im)*100).toFixed(2):null; }), borderColor:'#7c8cf8', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
+      options:ctrLineOpts() });
     charts.bsr = new Chart(el('cBsr'), { type:'line',
       data:{ labels:dd, datasets:[
         { label:'Revenue', data:dd.map(d=>Math.round((b.daily[d]||{}).revenue||0)), borderColor:'#3ddc97', backgroundColor:'rgba(61,220,151,.12)', fill:true, tension:.3, pointRadius:0 },
@@ -591,6 +598,13 @@ function roasLineOpts(){
       tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${c.parsed.y}x` } } },
     scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
       y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+'x'}, suggestedMin:0, suggestedMax:5 } } };
+}
+function ctrLineOpts(){
+  return { responsive:true, maintainAspectRatio:false,
+    plugins:{ legend:{ display:false },
+      tooltip:{ callbacks:{ label:c=>`CTR: ${c.parsed.y}%` } } },
+    scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
+      y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+'%'}, suggestedMin:0 } } };
 }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 
