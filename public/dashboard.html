@@ -3,181 +3,193 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#0a0a0c">
-<meta name="dash-build" content="cockpit-3">
+<meta name="theme-color" content="#0b0b0d">
+<meta name="dash-build" content="cockpit-4">
 <title>House of CC — Cockpit</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
-    --bg:#0a0a0c; --surface:#141417; --surface2:#1b1b20; --line:rgba(255,255,255,.08);
-    --txt:#f5f5f6; --muted:#9a9aa4; --faint:#67676f;
-    --accent:#f5b13d; --accent-dim:rgba(245,177,61,.14);
-    --up:#3ddc97; --down:#ff6b81; --up-dim:rgba(61,220,151,.14); --down-dim:rgba(255,107,129,.14);
-    --r:16px;
+    --bg:#0b0b0d; --panel:#131317; --panel2:#191920; --raise:#20202a;
+    --line:rgba(255,255,255,.07); --line2:rgba(255,255,255,.12);
+    --txt:#f2f2f4; --muted:#9a9aa4; --faint:#66666f;
+    --accent:#f5b13d; --accent-ink:#1a1205;
+    --up:#35d09a; --down:#ff6b81; --up-dim:rgba(53,208,154,.13); --down-dim:rgba(255,107,129,.13);
+    --s1:4px; --s2:8px; --s3:12px; --s4:16px; --s5:20px; --s6:28px;
+    --r:14px; --r-sm:10px;
+    --cmd-h:108px;
   }
   *{box-sizing:border-box}
   html,body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
-  body{padding:0 0 64px}
+  body{padding-bottom:56px}
   a{color:inherit}
   .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
-  .wrap{max-width:1180px;margin:0 auto;padding:0 16px}
+  .muted{color:var(--muted)} .small{font-size:12px}
 
-  /* header */
-  header{position:sticky;top:0;z-index:40;background:rgba(10,10,12,.82);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
-  .hd{display:flex;align-items:center;justify-content:space-between;gap:12px;padding:13px 16px;max-width:1180px;margin:0 auto}
-  .brandname{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;letter-spacing:.01em}
+  /* ---------- command bar (sticky) ---------- */
+  .cmd{position:sticky;top:0;z-index:50;background:rgba(11,11,13,.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
+  .cmd__in{max-width:1320px;margin:0 auto;padding:10px 20px}
+  .cmd__row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
+  .cmd__row+.cmd__row{margin-top:10px}
+  .brandname{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;letter-spacing:.01em;margin-right:auto}
   .brandname b{color:var(--accent);font-weight:800}
-  .dot{width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 10px var(--up);animation:pulse 2.4s ease-in-out infinite}
-  @keyframes pulse{50%{opacity:.45}}
-  .rangelabel{font-size:12px;color:var(--muted);font-weight:600;letter-spacing:.01em}
+  .dot{width:8px;height:8px;border-radius:50%;background:var(--up);box-shadow:0 0 9px var(--up);animation:pulse 2.6s ease-in-out infinite}
+  @keyframes pulse{50%{opacity:.4}}
+  .rangelabel{font-size:12px;color:var(--muted);font-weight:600}
 
-  /* controls */
-  .modebar{padding:16px 0 4px}
-  .modeseg{display:inline-flex;background:var(--surface);border:1px solid var(--line);border-radius:999px;padding:4px;gap:4px}
-  .seg{border:0;background:transparent;color:var(--muted);font:700 13px inherit;padding:9px 20px;border-radius:999px;cursor:pointer;transition:.15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+  .modeseg{display:inline-flex;background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:3px;gap:3px}
+  .seg{border:0;background:transparent;color:var(--muted);font:700 12.5px inherit;padding:7px 14px;border-radius:8px;cursor:pointer;transition:.14s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
   .seg.on{background:var(--txt);color:#000}
   .seg:hover:not(.on){color:var(--txt)}
-  @media(max-width:520px){.modeseg{display:flex;width:100%}.seg{flex:1;text-align:center;padding:10px 8px}}
 
-  .controls{display:flex;flex-wrap:wrap;gap:10px;align-items:center;padding:12px 0}
-  .chips{display:flex;gap:6px;flex-wrap:wrap}
-  .chip{border:1px solid var(--line);background:var(--surface);color:var(--muted);font:600 12.5px/1 inherit;letter-spacing:.01em;padding:9px 13px;border-radius:999px;cursor:pointer;transition:.15s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
-  .chip:hover{color:var(--txt);border-color:rgba(255,255,255,.2)}
-  .chip.on{background:var(--accent);color:#1a1205;border-color:var(--accent);font-weight:700}
-  .custom{display:none;gap:8px;align-items:center;flex-wrap:wrap}
+  .chips{display:flex;gap:5px;flex-wrap:wrap}
+  .chip{border:1px solid var(--line);background:var(--panel);color:var(--muted);font:600 12px/1 inherit;padding:8px 12px;border-radius:8px;cursor:pointer;transition:.14s;white-space:nowrap;-webkit-tap-highlight-color:transparent}
+  .chip:hover{color:var(--txt);border-color:var(--line2)}
+  .chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent);font-weight:700}
+  .custom{display:none;gap:var(--s2);align-items:center;flex-wrap:wrap}
   .custom.show{display:flex}
-  .custom input[type=date]{background:var(--surface);border:1px solid var(--line);color:var(--txt);border-radius:10px;padding:8px 10px;font:600 12.5px inherit;color-scheme:dark}
-  .btn{background:var(--accent);border:0;color:#1a1205;font:700 12.5px inherit;padding:9px 15px;border-radius:10px;cursor:pointer}
-  .btn.ghost{background:var(--surface);border:1px solid var(--line);color:var(--txt)}
+  .custom input[type=date]{background:var(--panel);border:1px solid var(--line);color:var(--txt);border-radius:8px;padding:7px 9px;font:600 12px inherit;color-scheme:dark}
+  .btn{background:var(--accent);border:0;color:var(--accent-ink);font:700 12px inherit;padding:8px 14px;border-radius:8px;cursor:pointer}
 
-  /* brand picker */
-  .bpick{position:relative;margin-left:auto}
-  .bpick__btn{display:flex;align-items:center;gap:7px;border:1px solid var(--line);background:var(--surface);color:var(--txt);font:600 12.5px inherit;padding:9px 13px;border-radius:999px;cursor:pointer}
+  .bpick{position:relative}
+  .bpick__btn{display:flex;align-items:center;gap:6px;border:1px solid var(--line);background:var(--panel);color:var(--txt);font:600 12px inherit;padding:8px 12px;border-radius:8px;cursor:pointer}
   .bpick__btn strong{color:var(--accent)}
-  .bpick__panel{position:absolute;right:0;top:calc(100% + 8px);width:min(300px,86vw);max-height:60vh;overflow:auto;background:var(--surface2);border:1px solid var(--line);border-radius:14px;padding:8px;z-index:50;display:none;box-shadow:0 24px 60px rgba(0,0,0,.6)}
+  .bpick__panel{position:absolute;right:0;top:calc(100% + 8px);width:min(300px,86vw);max-height:60vh;overflow:auto;background:var(--panel2);border:1px solid var(--line2);border-radius:12px;padding:8px;z-index:60;display:none;box-shadow:0 24px 60px rgba(0,0,0,.6)}
   .bpick__panel.show{display:block}
-  .bopt{display:flex;align-items:center;gap:10px;padding:9px 10px;border-radius:9px;cursor:pointer;font-size:13.5px}
+  .bopt{display:flex;align-items:center;gap:10px;padding:8px 10px;border-radius:8px;cursor:pointer;font-size:13px}
   .bopt:hover{background:rgba(255,255,255,.05)}
-  .bopt input{accent-color:var(--accent);width:16px;height:16px}
+  .bopt input{accent-color:var(--accent);width:15px;height:15px}
   .bopt.allrow{border-bottom:1px solid var(--line);margin-bottom:4px;font-weight:700}
 
-  /* tabs */
-  .tabs{display:flex;gap:6px;overflow-x:auto;padding:4px 0 16px;scrollbar-width:none}
-  .tabs::-webkit-scrollbar{display:none}
-  .tab{border:1px solid var(--line);background:var(--surface);color:var(--muted);font:700 13px inherit;padding:9px 15px;border-radius:11px;cursor:pointer;white-space:nowrap;transition:.15s}
-  .tab.on{background:var(--txt);border-color:var(--txt);color:#000}
-  .tab:hover:not(.on){color:var(--txt)}
+  /* ---------- shell: rail + main ---------- */
+  .shell{max-width:1320px;margin:0 auto;padding:var(--s5) 20px}
+  @media(min-width:960px){ .shell{display:grid;grid-template-columns:236px 1fr;gap:var(--s5);align-items:start} }
 
-  /* briefing hero */
-  .hero{background:linear-gradient(180deg,var(--surface2),var(--surface));border:1px solid var(--line);border-radius:20px;padding:22px 22px 20px;margin-bottom:18px;position:relative;overflow:hidden}
-  .hero::before{content:"";position:absolute;inset:0;background:radial-gradient(120% 120% at 100% 0%,var(--accent-dim),transparent 55%);pointer-events:none}
-  .hero__eyebrow{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--faint);font-weight:700}
-  .hero__row{display:flex;align-items:flex-end;gap:16px;flex-wrap:wrap;margin-top:8px}
-  .hero__big{font-size:clamp(38px,8.5vw,60px);font-weight:800;letter-spacing:-.03em;line-height:.96}
-  .hero__sub{display:flex;gap:18px;flex-wrap:wrap;align-items:center;margin-top:4px}
-  .hero__stat{font-size:13px;color:var(--muted)}
-  .hero__stat b{color:var(--txt);font-weight:700}
-  .brief{margin-top:16px;font-size:14.5px;line-height:1.55;color:var(--muted);max-width:74ch}
+  /* nav rail (doubles as brand leaderboard) */
+  .rail{display:flex;flex-direction:column;gap:3px}
+  @media(min-width:960px){ .rail{position:sticky;top:calc(var(--cmd-h) + 16px);max-height:calc(100vh - var(--cmd-h) - 32px);overflow:auto;padding-right:4px} }
+  .rail__sect{font-size:10px;letter-spacing:.13em;text-transform:uppercase;color:var(--faint);font-weight:700;padding:10px 10px 5px}
+  .navitem{display:flex;align-items:center;justify-content:space-between;gap:8px;width:100%;text-align:left;border:1px solid transparent;background:transparent;color:var(--muted);font:600 13px inherit;padding:9px 10px;border-radius:9px;cursor:pointer;transition:.13s}
+  .navitem:hover{background:var(--panel);color:var(--txt)}
+  .navitem.on{background:var(--panel);border-color:var(--line2);color:var(--txt)}
+  .navitem.on .navitem__name{color:var(--accent)}
+  .navitem__name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .navitem__meta{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);white-space:nowrap;flex-shrink:0}
+  @media(max-width:959px){
+    .rail{flex-direction:row;overflow-x:auto;gap:6px;padding:2px 0 12px;scrollbar-width:none}
+    .rail::-webkit-scrollbar{display:none}
+    .rail__sect{display:none}
+    .navitem{width:auto;padding:8px 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+    .navitem__meta{display:none}
+  }
+
+  /* ---------- section label ---------- */
+  .sect{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:var(--s6) 2px var(--s3)}
+  .sect:first-child{margin-top:0}
+
+  /* ---------- summary strip (de-slopped hero) ---------- */
+  .summary{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:var(--s5);border-left:3px solid var(--accent)}
+  .summary__eyebrow{font-size:11px;letter-spacing:.1em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .summary__row{display:flex;align-items:baseline;gap:var(--s3);flex-wrap:wrap;margin-top:6px}
+  .summary__big{font-size:clamp(32px,6vw,46px);font-weight:800;letter-spacing:-.03em;line-height:1}
+  .brief{margin-top:var(--s3);font-size:14px;line-height:1.55;color:var(--muted);max-width:78ch}
   .brief b{color:var(--txt);font-weight:700}
   .brief .bn{color:var(--accent);font-weight:700}
   .brief .gn{color:var(--up);font-weight:700} .brief .rn{color:var(--down);font-weight:700}
 
   /* delta pill */
-  .delta{display:inline-flex;align-items:center;gap:3px;font-size:12px;font-weight:800;padding:3px 8px;border-radius:999px;letter-spacing:.01em;vertical-align:middle}
+  .delta{display:inline-flex;align-items:center;gap:3px;font-size:11.5px;font-weight:800;padding:3px 7px;border-radius:7px;letter-spacing:.01em;vertical-align:middle}
   .delta.up{background:var(--up-dim);color:var(--up)} .delta.down{background:var(--down-dim);color:var(--down)}
-  .delta.flat{background:rgba(255,255,255,.06);color:var(--faint)}
-  .delta.big{font-size:14px;padding:5px 11px}
+  .delta.flat{background:rgba(255,255,255,.05);color:var(--faint)}
+  .delta.big{font-size:13px;padding:4px 10px}
 
-  /* kpi grid */
-  .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(168px,1fr));gap:12px;margin-bottom:18px}
-  .kpi{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px 15px 13px;position:relative;overflow:hidden}
-  .kpi__top{display:flex;align-items:flex-start;justify-content:space-between;gap:8px}
-  .kpi__l{font-size:10.5px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:700}
-  .kpi__v{font-size:25px;font-weight:800;letter-spacing:-.02em;margin-top:9px}
+  /* ---------- kpi tiles ---------- */
+  .kpis{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:var(--s3)}
+  .kpi{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);padding:13px 14px}
+  .kpi__top{display:flex;align-items:center;justify-content:space-between;gap:8px}
+  .kpi__l{font-size:10px;letter-spacing:.09em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .kpi__v{font-size:22px;font-weight:800;letter-spacing:-.02em;margin-top:7px}
   .kpi__v.pos{color:var(--up)} .kpi__v.neg{color:var(--down)}
-  .kpi__s{font-size:12px;color:var(--muted);margin-top:3px}
-  .kpi__spark{margin-top:10px;height:30px}
-  .kpi__spark svg{width:100%;height:30px;display:block}
+  .kpi__spark{margin-top:9px;height:26px}
+  .kpi__spark svg{width:100%;height:26px;display:block}
 
-  /* movers */
-  .movers{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-bottom:16px}
+  /* ---------- movers ---------- */
+  .movers{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
   @media(max-width:620px){.movers{grid-template-columns:1fr}}
-  .mcard{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:15px 16px}
-  .mcard h4{margin:0 0 12px;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700;display:flex;align-items:center;gap:7px}
-  .mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:7px 0;border-top:1px solid rgba(255,255,255,.05);cursor:pointer}
+  .mcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r-sm);padding:13px 15px}
+  .mcard h4{margin:0 0 10px;font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--faint);font-weight:700}
+  .mrow{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:6px 0;border-top:1px solid rgba(255,255,255,.05);cursor:pointer}
   .mrow:first-of-type{border-top:0}
   .mrow:hover .mname{color:var(--accent)}
-  .mname{font-weight:700;font-size:13.5px;transition:.12s}
-  .mval{font-size:12.5px;color:var(--muted)}
+  .mname{font-weight:700;font-size:13px;transition:.12s}
+  .mval{font-size:12px;color:var(--muted)}
 
-  /* cards / charts */
-  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:16px 16px 12px;margin-bottom:16px}
-  .card h3{margin:0 0 14px;font-size:12px;font-weight:700;letter-spacing:.05em;text-transform:uppercase;color:var(--muted)}
-  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:16px}
+  /* ---------- cards / charts ---------- */
+  .card{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:var(--s4) var(--s4) 10px;margin-bottom:var(--s3)}
+  .card h3{margin:0 0 var(--s3);font-size:11.5px;font-weight:700;letter-spacing:.04em;text-transform:uppercase;color:var(--muted)}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:var(--s3)}
   @media(max-width:760px){.grid2{grid-template-columns:1fr}}
-  .chartbox{position:relative;height:300px}
-  .chartbox.tall{height:340px}
+  .chartbox{position:relative;height:280px}
+  .chartbox.tall{height:330px}
 
-  /* table */
+  /* ---------- table ---------- */
   .tablewrap{overflow-x:auto;-webkit-overflow-scrolling:touch}
-  table{width:100%;border-collapse:collapse;font-size:13px;min-width:620px}
-  th,td{text-align:right;padding:11px 12px;white-space:nowrap}
-  th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--surface)}
-  thead th{color:var(--faint);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);font-weight:700}
+  table{width:100%;border-collapse:collapse;font-size:13px;min-width:640px}
+  th,td{text-align:right;padding:10px 12px;white-space:nowrap}
+  th:first-child,td:first-child{text-align:left;position:sticky;left:0;background:var(--panel)}
+  thead th{color:var(--faint);font-size:10px;text-transform:uppercase;letter-spacing:.05em;border-bottom:1px solid var(--line);font-weight:700}
   tbody tr{border-bottom:1px solid rgba(255,255,255,.05);cursor:pointer}
   tbody tr:hover{background:rgba(255,255,255,.03)}
   td.pos{color:var(--up)} td.neg{color:var(--down)}
   .bname{font-weight:700}
 
-  .muted{color:var(--muted)} .small{font-size:12px}
-  .empty{text-align:center;color:var(--faint);padding:60px 0;font-size:14px}
-  .spinner{width:34px;height:34px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:60px auto}
+  .empty{text-align:center;color:var(--faint);padding:56px 0;font-size:14px}
+  .spinner{width:32px;height:32px;border:3px solid var(--line);border-top-color:var(--accent);border-radius:50%;animation:spin .8s linear infinite;margin:60px auto}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .pill{display:inline-block;font-size:11px;font-weight:700;padding:3px 9px;border-radius:999px}
-  .pill.g{background:var(--up-dim);color:var(--up)} .pill.r{background:var(--down-dim);color:var(--down)}
-  .err{background:rgba(255,107,129,.1);border:1px solid rgba(255,107,129,.3);color:#fecdd3;border-radius:12px;padding:12px 14px;margin:12px 0;font-size:13px}
-  .foot{text-align:center;color:var(--faint);font-size:11px;padding:24px 0}
-  .fadein{animation:fade .35s ease}
-  @keyframes fade{from{opacity:0;transform:translateY(6px)}to{opacity:1;transform:none}}
+  .err{background:var(--down-dim);border:1px solid rgba(255,107,129,.3);color:#fecdd3;border-radius:12px;padding:12px 14px;margin:12px 0;font-size:13px}
+  .foot{text-align:center;color:var(--faint);font-size:11px;padding:var(--s5) 0 0}
+  .fadein{animation:fade .3s ease}
+  @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
 </style>
 </head>
 <body>
-<header>
-  <div class="hd">
-    <div class="brandname"><span class="dot"></span>House of CC <b>· Cockpit</b></div>
-    <div class="rangelabel" id="rangeLabel">—</div>
-  </div>
-</header>
 
-<div class="wrap">
-  <div class="modebar">
-    <div class="modeseg" id="modeSeg">
-      <button class="seg on" data-platform="shopify">Shopify</button>
-      <button class="seg" data-platform="cc">Culture Circle</button>
+<div class="cmd">
+  <div class="cmd__in">
+    <div class="cmd__row">
+      <div class="brandname"><span class="dot"></span>House of CC <b>· Cockpit</b></div>
+      <div class="modeseg" id="modeSeg">
+        <button class="seg on" data-platform="shopify">Shopify</button>
+        <button class="seg" data-platform="cc">Culture Circle</button>
+      </div>
+    </div>
+    <div class="cmd__row">
+      <div class="chips" id="rangeChips">
+        <button class="chip on" data-range="yesterday">Yesterday</button>
+        <button class="chip" data-range="today">Today</button>
+        <button class="chip" data-range="7d">7D</button>
+        <button class="chip" data-range="30d">30D</button>
+        <button class="chip" data-range="this month">This month</button>
+        <button class="chip" data-range="__custom">Custom</button>
+      </div>
+      <div class="custom" id="customBox">
+        <input type="date" id="fromDate"><span class="muted small">to</span><input type="date" id="toDate">
+        <button class="btn" id="applyCustom">Apply</button>
+      </div>
+      <div class="bpick" style="margin-left:auto">
+        <button class="bpick__btn" id="bpickBtn">Brands: <strong id="bpickLabel">All</strong> ▾</button>
+        <div class="bpick__panel" id="bpickPanel"></div>
+      </div>
+      <div class="rangelabel" id="rangeLabel">—</div>
     </div>
   </div>
-  <div class="controls">
-    <div class="chips" id="rangeChips">
-      <button class="chip on" data-range="yesterday">Yesterday</button>
-      <button class="chip" data-range="today">Today</button>
-      <button class="chip" data-range="7d">7D</button>
-      <button class="chip" data-range="30d">30D</button>
-      <button class="chip" data-range="this month">This month</button>
-      <button class="chip" data-range="__custom">Custom</button>
-    </div>
-    <div class="custom" id="customBox">
-      <input type="date" id="fromDate"><span class="muted small">to</span><input type="date" id="toDate">
-      <button class="btn" id="applyCustom">Apply</button>
-    </div>
-    <div class="bpick">
-      <button class="bpick__btn" id="bpickBtn">Brands: <strong id="bpickLabel">All</strong> ▾</button>
-      <div class="bpick__panel" id="bpickPanel"></div>
-    </div>
-  </div>
+</div>
 
-  <div class="tabs" id="tabs"></div>
-  <div id="view"><div class="spinner"></div></div>
-  <div class="foot" id="foot"></div>
+<div class="shell">
+  <aside class="rail" id="rail"></aside>
+  <main>
+    <div id="view"><div class="spinner"></div></div>
+    <div class="foot" id="foot"></div>
+  </main>
 </div>
 
 <script>
@@ -188,29 +200,25 @@ const moneyShort = n => { n = Math.round(n||0); if(n>=1e7) return '₹'+(n/1e7).
 const num = n => RUPEE.format(Math.round(n || 0));
 const pct = n => (n == null ? '—' : n.toFixed(2) + '%');
 const roasFmt = n => (n == null ? '—' : n.toFixed(2) + 'x');
-const COLORS = ['#f5b13d','#7c8cf8','#3ddc97','#22d3ee','#ff6b81','#a78bfa','#f472b6','#4ade80','#facc15','#38bdf8','#fb923c','#c084fc','#2dd4bf','#e879f9','#60a5fa','#f87171'];
+const COLORS = ['#f5b13d','#7c8cf8','#35d09a','#22d3ee','#ff6b81','#a78bfa','#f472b6','#4ade80','#facc15','#38bdf8','#fb923c','#c084fc','#2dd4bf','#e879f9','#60a5fa','#f87171'];
 
 const state = { platform:'shopify', rangeText:'yesterday', report:null, prev:null, selected:null, tab:'overview', loading:false };
 const charts = {};
 function destroyCharts(){ for(const k in charts){ try{charts[k].destroy();}catch(e){} delete charts[k]; } }
 function el(id){ return document.getElementById(id); }
 function ddmmyy(iso){ const [y,m,d]=iso.split('-'); return `${d}.${m}.${y.slice(2)}`; }
-function istDay(ms){ return new Date(ms).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); } // YYYY-MM-DD
+function istDay(ms){ return new Date(ms).toLocaleDateString('en-CA',{timeZone:'Asia/Kolkata'}); }
 
-/* previous equal-length window, ending the day before the current window starts */
 function prevRangeParam(range){
-  if(!range || !range.from) return null;                 // 'all time' -> no prior
+  if(!range || !range.from) return null;
   const from = Date.parse(range.from), to = Date.parse(range.to);
   if(!from || !to || to<=from) return null;
   const len = to - from;
-  const pFrom = from - len;                               // start of prior window
-  const pEnd  = from - 1;                                 // last instant before current
-  const a = ddmmyy(istDay(pFrom)), b = ddmmyy(istDay(pEnd));
-  return `${a}-${b}`;
+  return `${ddmmyy(istDay(from-len))}-${ddmmyy(istDay(from-1))}`;
 }
 
 async function load(){
-  state.loading = true; el('view').innerHTML = '<div class="spinner"></div>'; destroyCharts();
+  state.loading = true; el('view').innerHTML = '<div class="spinner"></div>'; el('rail').innerHTML = ''; destroyCharts();
   try{
     const r = await fetch(`${API}?platform=${state.platform}&range=${encodeURIComponent(state.rangeText)}`);
     const data = await r.json();
@@ -219,8 +227,8 @@ async function load(){
     el('rangeLabel').textContent = (data.range && data.range.label) || '';
 
     if(data.connected === false){
-      el('tabs').innerHTML = ''; el('bpickLabel').textContent = '—'; el('bpickPanel').innerHTML = '';
-      el('view').innerHTML = `<div class="empty">Culture Circle data source isn't connected yet.<br><span class="small">Send the CC sales/orders source and it lights up here — same metrics, same views.</span></div>`;
+      el('bpickLabel').textContent = '—'; el('bpickPanel').innerHTML = '';
+      el('view').innerHTML = `<div class="empty">Culture Circle data source isn't connected yet.<br><span class="small">Send the CC sales/orders source and it lights up here.</span></div>`;
       el('foot').textContent = `Culture Circle · ${(data.range&&data.range.label)||''} · awaiting data source`;
       state.loading = false; return;
     }
@@ -229,15 +237,14 @@ async function load(){
     else state.selected = new Set([...state.selected].filter(k=>data.brands.some(b=>b.key===k)));
     if(state.selected.size === 0) state.selected = new Set(data.brands.map(b=>b.key));
 
-    buildBrandPicker(); buildTabs(); render();
+    buildBrandPicker(); buildNav(); render();
 
-    // fetch the prior window in the background -> deltas + briefing light up when it lands
     const pr = prevRangeParam(data.range);
     if(pr){
       fetch(`${API}?platform=${state.platform}&range=${encodeURIComponent(pr)}`)
         .then(x=>x.json()).then(pdata=>{
           if(pdata && !pdata.error && pdata.connected!==false && state.report===data){
-            state.prev = pdata; render();   // re-render with deltas now available
+            state.prev = pdata; buildNav(); render();
           }
         }).catch(()=>{});
     }
@@ -250,7 +257,7 @@ async function load(){
 function selectedBrands(){ return state.report.brands.filter(b=>state.selected.has(b.key)); }
 function prevBrand(key){ return state.prev ? state.prev.brands.find(b=>b.key===key) : null; }
 
-/* ---------- delta helpers ---------- */
+/* ---------- deltas ---------- */
 function deltaPct(cur, prev){ if(prev==null||prev===0) return null; return (cur-prev)/Math.abs(prev)*100; }
 function deltaPill(cur, prev, opts){
   opts = opts || {};
@@ -261,43 +268,53 @@ function deltaPill(cur, prev, opts){
   return `<span class="delta ${cls} ${opts.big?'big':''}">${arrow} ${Math.abs(d).toFixed(0)}%</span>`;
 }
 
-/* ---------- inline sparkline (svg) ---------- */
+/* ---------- sparkline ---------- */
 function sparkline(values, color){
   const v = values.filter(x=>x!=null);
   if(v.length<3) return '';
-  const w=160, h=30, min=Math.min(...v), max=Math.max(...v), span=(max-min)||1;
+  const w=160, h=26, min=Math.min(...v), max=Math.max(...v), span=(max-min)||1;
   const pts = v.map((x,i)=>{ const px=(i/(v.length-1))*w; const py=h-2-((x-min)/span)*(h-4); return `${px.toFixed(1)},${py.toFixed(1)}`; });
-  const last = v[v.length-1], first=v[0];
+  const last=v[v.length-1], first=v[0];
   const c = color || (last>=first ? 'var(--up)' : 'var(--down)');
   const lx=(w).toFixed(1), ly=(h-2-((last-min)/span)*(h-4)).toFixed(1);
-  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts.join(' ')}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx}" cy="${ly}" r="2.2" fill="${c}"/></svg>`;
+  return `<svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none"><polyline points="${pts.join(' ')}" fill="none" stroke="${c}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/><circle cx="${lx}" cy="${ly}" r="2.1" fill="${c}"/></svg>`;
 }
 
-/* ---------- brand picker ---------- */
+/* ---------- brand picker (filter) ---------- */
 function buildBrandPicker(){
   const all = state.report.brands;
   const allOn = state.selected.size === all.length;
   let html = `<label class="bopt allrow"><input type="checkbox" id="ballcb" ${allOn?'checked':''}><span>All brands (${all.length})</span></label>`;
   for(const b of all) html += `<label class="bopt"><input type="checkbox" class="bcb" value="${b.key}" ${state.selected.has(b.key)?'checked':''}><span>${esc(b.brand)}</span></label>`;
   el('bpickPanel').innerHTML = html;
-  el('ballcb').onchange = e => { state.selected = e.target.checked ? new Set(all.map(b=>b.key)) : new Set([all[0].key]); buildBrandPicker(); buildTabs(); render(); };
+  el('ballcb').onchange = e => { state.selected = e.target.checked ? new Set(all.map(b=>b.key)) : new Set([all[0].key]); buildBrandPicker(); buildNav(); render(); };
   el('bpickPanel').querySelectorAll('.bcb').forEach(cb => cb.onchange = () => {
     const s = new Set(all.filter(b=>{ const n=el('bpickPanel').querySelector(`.bcb[value="${b.key}"]`); return n&&n.checked; }).map(b=>b.key));
     if(s.size===0) return;
     state.selected = s;
     if(state.tab!=='overview' && state.tab!=='export' && !s.has(state.tab)) state.tab='overview';
-    buildBrandPicker(); buildTabs(); render();
+    buildBrandPicker(); buildNav(); render();
   });
   el('bpickLabel').textContent = allOn ? 'All' : `${state.selected.size} selected`;
 }
 
-/* ---------- tabs ---------- */
-function buildTabs(){
-  let html = `<button class="tab ${state.tab==='overview'?'on':''}" data-tab="overview">Overview</button>`
-    + `<button class="tab ${state.tab==='export'?'on':''}" data-tab="export">Export</button>`;
-  for(const b of selectedBrands()) html += `<button class="tab ${state.tab===b.key?'on':''}" data-tab="${b.key}">${esc(b.brand)}</button>`;
-  el('tabs').innerHTML = html;
-  el('tabs').querySelectorAll('.tab').forEach(t => t.onclick = () => { state.tab = t.dataset.tab; buildTabs(); render(); });
+/* ---------- nav rail (nav + live leaderboard) ---------- */
+function buildNav(){
+  const brands = selectedBrands().slice().sort((a,b)=>b.revenue-a.revenue);
+  let html = `<div class="rail__sect">Views</div>`
+    + navItem('overview','Overview','')
+    + navItem('export','Export','')
+    + `<div class="rail__sect">Brands · ${brands.length}</div>`;
+  for(const b of brands){
+    const p = prevBrand(b.key);
+    const meta = `<span class="navitem__meta num">${moneyShort(b.revenue)} ${p?deltaPill(b.revenue,p.revenue,{silent:true}):''}</span>`;
+    html += navItem(b.key, esc(b.brand), meta);
+  }
+  el('rail').innerHTML = html;
+  el('rail').querySelectorAll('.navitem').forEach(n=>n.onclick=()=>{ state.tab=n.dataset.tab; buildNav(); render(); if(window.innerWidth>=960) window.scrollTo({top:0,behavior:'smooth'}); });
+}
+function navItem(tab, name, meta){
+  return `<button class="navitem ${state.tab===tab?'on':''}" data-tab="${tab}"><span class="navitem__name">${name}</span>${meta||''}</button>`;
 }
 
 /* ---------- aggregate ---------- */
@@ -314,47 +331,31 @@ function agg(brands){
   a.cvr = a.sessKnown && a.sessions ? a.orders/a.sessions*100 : null;
   return a;
 }
-function dailyMerge(brands){
-  const d = {};
-  for(const b of brands) for(const [k,v] of Object.entries(b.daily||{})){ d[k]=d[k]||{revenue:0,orders:0}; d[k].revenue+=v.revenue; d[k].orders+=v.orders; }
-  return d;
-}
-function dailySpendMerge(brands){
-  const d = {};
-  for(const b of brands) for(const [k,v] of Object.entries(b.dailySpend||{})){ d[k]=(d[k]||0)+v; }
-  return d;
-}
+function dailyMerge(brands){ const d={}; for(const b of brands) for(const [k,v] of Object.entries(b.daily||{})){ d[k]=d[k]||{revenue:0,orders:0}; d[k].revenue+=v.revenue; d[k].orders+=v.orders; } return d; }
 
 /* ---------- render ---------- */
 function render(){
   if(state.tab==='overview') renderOverview();
   else if(state.tab==='export') renderExport();
   else renderBrand(state.tab);
-  el('foot').textContent = `Live · Shopify + Meta · ${state.report.range.label} · ${new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata'})} IST`;
+  el('foot').textContent = `Live · Shopify + Meta · ${state.report.range.label} · updated ${new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})} IST`;
 }
 
-/* ---------- briefing (auto-written) ---------- */
+/* ---------- briefing ---------- */
 function briefing(brands, a, pa){
   const parts = [];
   const dRev = pa ? deltaPct(a.revenue, pa.revenue) : null;
-  if(dRev!=null){
-    const cls = dRev>=0?'gn':'rn'; const word = dRev>=0?'up':'down';
-    parts.push(`Portfolio is <span class="${cls}">${word} ${Math.abs(dRev).toFixed(0)}%</span> vs the prior period.`);
-  }
-  // biggest mover (by revenue % change, with a floor so tiny brands don't dominate)
+  if(dRev!=null){ const cls=dRev>=0?'gn':'rn'; parts.push(`Portfolio is <span class="${cls}">${dRev>=0?'up':'down'} ${Math.abs(dRev).toFixed(0)}%</span> vs the prior period.`); }
   if(state.prev){
-    const floor = 5000;
-    const moved = brands.map(b=>{ const p=prevBrand(b.key); const d=p?deltaPct(b.revenue,p.revenue):null; return {b,d,p}; })
+    const floor=5000;
+    const moved = brands.map(b=>{ const p=prevBrand(b.key); return {b,d:p?deltaPct(b.revenue,p.revenue):null,p}; })
       .filter(x=>x.d!=null && (x.b.revenue>=floor || (x.p&&x.p.revenue>=floor)));
-    const up = moved.slice().sort((x,y)=>y.d-x.d)[0];
-    const dn = moved.slice().sort((x,y)=>x.d-y.d)[0];
+    const up=moved.slice().sort((x,y)=>y.d-x.d)[0], dn=moved.slice().sort((x,y)=>x.d-y.d)[0];
     if(up && up.d>5) parts.push(`<span class="bn">${esc(up.b.brand)}</span> led the climb (<span class="gn">+${up.d.toFixed(0)}%</span>, ${moneyShort(up.b.revenue)}).`);
     if(dn && dn.d<-5 && (!up || dn.b.key!==up.b.key)) parts.push(`<span class="bn">${esc(dn.b.brand)}</span> slipped <span class="rn">${dn.d.toFixed(0)}%</span>.`);
   }
-  // biggest ad problem: spend with weak ROAS
   const burning = brands.filter(b=>(b.adSpend||0)>1000 && b.roas!=null && b.roas<1).sort((x,y)=>y.adSpend-x.adSpend)[0];
-  if(burning) parts.push(`<span class="bn">${esc(burning.brand)}</span> is <span class="rn">underwater on ads</span> — ${moneyShort(burning.adSpend)} spent at ${roasFmt(burning.roas)} ROAS.`);
-  // best seller flourish
+  if(burning) parts.push(`<span class="bn">${esc(burning.brand)}</span> is <span class="rn">underwater on ads</span> — ${moneyShort(burning.adSpend)} at ${roasFmt(burning.roas)} ROAS.`);
   const top = brands.slice().sort((x,y)=>y.revenue-x.revenue)[0];
   if(top && top.bestSeller) parts.push(`Best seller: <b>${esc(top.bestSeller.title)}</b>.`);
   if(!parts.length) parts.push(`${brands.length} brand${brands.length>1?'s':''} reporting for ${esc(state.report.range.label)}.`);
@@ -369,25 +370,14 @@ function renderOverview(){
   const mergedDaily = dailyMerge(brands), days = Object.keys(mergedDaily).sort();
   const revSeries = days.map(d=>mergedDaily[d].revenue), ordSeries = days.map(d=>mergedDaily[d].orders);
 
-  // ---- briefing hero ----
-  let html = `<div class="hero fadein">
-    <div class="hero__eyebrow">${esc(state.report.range.label)} · ${brands.length} brand${brands.length>1?'s':''}</div>
-    <div class="hero__row">
-      <div class="hero__big num">${money(a.revenue)}</div>
-      ${pa?deltaPill(a.revenue, pa.revenue, {big:true}):''}
-    </div>
-    <div class="hero__sub">
-      <span class="hero__stat num"><b>${num(a.orders)}</b> orders ${pa?deltaPill(a.orders,pa.orders,{silent:true}):''}</span>
-      <span class="hero__stat num"><b>${money(a.aov)}</b> AOV ${pa?deltaPill(a.aov,pa.aov,{silent:true}):''}</span>
-      ${hasAds?`<span class="hero__stat num"><b>${moneyShort(a.adSpend)}</b> ad spend ${pa?deltaPill(a.adSpend,pa.adSpend,{silent:true}):''}</span>`:''}
-      ${hasAds&&a.roas!=null?`<span class="hero__stat num"><b>${roasFmt(a.roas)}</b> ROAS</span>`:''}
-    </div>
-    <div class="brief">${briefing(brands, a, pa)}</div>
+  let html = `<div class="summary fadein">
+    <div class="summary__eyebrow">${esc(state.report.range.label)} · ${brands.length} brand${brands.length>1?'s':''} · total revenue</div>
+    <div class="summary__row"><div class="summary__big num">${money(a.revenue)}</div>${pa?deltaPill(a.revenue,pa.revenue,{big:true}):''}</div>
+    <div class="brief">${briefing(brands,a,pa)}</div>
   </div>`;
 
-  // ---- kpi cards w/ sparklines + deltas ----
+  html += `<div class="sect">Key metrics</div>`;
   html += '<div class="kpis">'
-    + kpiCard('Revenue', money(a.revenue), pa?deltaPill(a.revenue,pa.revenue):'', sparkline(revSeries))
     + kpiCard('Orders', num(a.orders), pa?deltaPill(a.orders,pa.orders):'', sparkline(ordSeries,'var(--accent)'))
     + kpiCard('AOV', money(a.aov), pa?deltaPill(a.aov,pa.aov):'', '')
     + (hasAds?kpiCard('Ad spend', moneyShort(a.adSpend), pa?deltaPill(a.adSpend,pa.adSpend):'', ''):'')
@@ -395,24 +385,18 @@ function renderOverview(){
     + (hasAds?kpiCard('Avg CTR', pct(a.ctr), pa&&pa.ctr!=null?deltaPill(a.ctr,pa.ctr):'', ''):'')
     + (a.sessKnown?kpiCard('Conv. rate', pct(a.cvr), pa&&pa.cvr!=null?deltaPill(a.cvr,pa.cvr):'', ''):'')
     + (a.sessKnown?kpiCard('Sessions', num(a.sessions), pa&&pa.sessKnown?deltaPill(a.sessions,pa.sessions):'', ''):'')
+    + kpiCard('Revenue', money(a.revenue), pa?deltaPill(a.revenue,pa.revenue):'', sparkline(revSeries))
     + '</div>';
 
-  // ---- movers ----
   if(state.prev){
-    const floor = 3000;
-    const moved = brands.map(b=>{ const p=prevBrand(b.key); const d=p?deltaPct(b.revenue,p.revenue):null; return {b,d}; })
-      .filter(x=>x.d!=null && x.b.revenue>=floor);
+    const floor=3000;
+    const moved = brands.map(b=>{ const p=prevBrand(b.key); return {b,d:p?deltaPct(b.revenue,p.revenue):null}; }).filter(x=>x.d!=null && x.b.revenue>=floor);
     const gain = moved.filter(x=>x.d>0).sort((x,y)=>y.d-x.d).slice(0,4);
     const drop = moved.filter(x=>x.d<0).sort((x,y)=>x.d-y.d).slice(0,4);
-    if(gain.length||drop.length){
-      html += '<div class="movers fadein">'
-        + moverCard('▲ Climbing', gain, 'up')
-        + moverCard('▼ Falling', drop, 'down')
-        + '</div>';
-    }
+    if(gain.length||drop.length) html += `<div class="sect">Movers</div><div class="movers fadein">`+moverCard('▲ Climbing',gain,'up')+moverCard('▼ Falling',drop,'down')+`</div>`;
   }
 
-  // ---- charts ----
+  html += `<div class="sect">Trends</div>`;
   html += '<div class="grid2">'
     + '<div class="card"><h3>Revenue by brand</h3><div class="chartbox"><canvas id="cRevBrand"></canvas></div></div>'
     + '<div class="card"><h3>Revenue trend</h3><div class="chartbox"><canvas id="cTrend"></canvas></div></div>'
@@ -424,9 +408,8 @@ function renderOverview(){
       + '</div>';
   }
 
-  // ---- table ----
-  let rows = brands.map(b=>{
-    const p = prevBrand(b.key);
+  html += `<div class="sect">Per-brand breakdown</div>`;
+  let rows = brands.map(b=>{ const p=prevBrand(b.key);
     return `<tr data-brand="${b.key}">
       <td class="bname">${esc(b.brand)}</td>
       <td class="num">${money(b.revenue)}</td>
@@ -434,64 +417,50 @@ function renderOverview(){
       <td class="num">${num(b.orders)}</td>
       <td class="num">${money(b.aov)}</td>
       ${hasAds?`<td class="num">${money(b.adSpend)}</td><td class="num ${b.roas!=null?(b.roas>=1?'pos':'neg'):''}">${roasFmt(b.roas)}</td><td class="num">${pct(b.ctr)}</td>`:''}
-      <td class="muted">${b.bestSeller?esc(b.bestSeller.title).slice(0,26):'—'}</td>
+      <td class="num">${b.sessions!=null?pct(b.sessions?b.orders/b.sessions*100:null):'—'}</td>
+      <td class="muted">${b.bestSeller?esc(b.bestSeller.title).slice(0,24):'—'}</td>
     </tr>`;
   }).join('');
-  html += `<div class="card"><h3>Per-brand breakdown</h3><div class="tablewrap"><table>
-     <thead><tr><th>Brand</th><th>Revenue</th><th>Δ</th><th>Orders</th><th>AOV</th>${hasAds?'<th>Ad spend</th><th>ROAS</th><th>CTR</th>':''}<th>Best seller</th></tr></thead>
-     <tbody>${rows||'<tr><td colspan=9 class=muted>No brands</td></tr>'}</tbody></table></div></div>`;
+  html += `<div class="card"><div class="tablewrap"><table>
+     <thead><tr><th>Brand</th><th>Revenue</th><th>Δ</th><th>Orders</th><th>AOV</th>${hasAds?'<th>Ad spend</th><th>ROAS</th><th>CTR</th>':''}<th>CVR</th><th>Best seller</th></tr></thead>
+     <tbody>${rows||'<tr><td colspan=10 class=muted>No brands</td></tr>'}</tbody></table></div></div>`;
 
   el('view').innerHTML = html;
-  el('view').querySelectorAll('tbody tr[data-brand]').forEach(tr=>tr.onclick=()=>{state.tab=tr.dataset.brand;buildTabs();render();});
+  el('view').querySelectorAll('tbody tr[data-brand]').forEach(tr=>tr.onclick=()=>{state.tab=tr.dataset.brand;buildNav();render();});
   destroyCharts();
 
   const names = brands.map(b=>b.brand);
-  charts.revBrand = new Chart(el('cRevBrand'), { type:'bar',
-    data:{ labels:names, datasets:[{ data:brands.map(b=>Math.round(b.revenue)), backgroundColor:'#f5b13d', borderRadius:6 }] },
-    options:barOpts('y') });
-
-  charts.trend = new Chart(el('cTrend'), { type:'line',
-    data:{ labels:days, datasets:[
-      { label:'Revenue', data:revSeries.map(Math.round), borderColor:'#3ddc97', backgroundColor:'rgba(61,220,151,.12)', fill:true, tension:.3, pointRadius:0, yAxisID:'y' },
-      { label:'Orders', data:ordSeries, borderColor:'#f5b13d', borderWidth:2, tension:.3, pointRadius:0, yAxisID:'y1' } ] },
-    options:lineOpts(true) });
-
+  charts.revBrand = new Chart(el('cRevBrand'), { type:'bar', data:{ labels:names, datasets:[{ data:brands.map(b=>Math.round(b.revenue)), backgroundColor:'#f5b13d', borderRadius:5 }] }, options:barOpts('y') });
+  charts.trend = new Chart(el('cTrend'), { type:'line', data:{ labels:days, datasets:[
+      { label:'Revenue', data:revSeries.map(Math.round), borderColor:'#35d09a', backgroundColor:'rgba(53,208,154,.12)', fill:true, tension:.3, pointRadius:0, yAxisID:'y' },
+      { label:'Orders', data:ordSeries, borderColor:'#f5b13d', borderWidth:2, tension:.3, pointRadius:0, yAxisID:'y1' } ] }, options:lineOpts(true) });
   if(hasAds){
-    // daily ROAS for top 4 ad-spenders
     const spenders = brands.filter(b=>(b.adSpend||0)>0).sort((x,y)=>y.adSpend-x.adSpend).slice(0,4);
     const allDays = [...new Set(spenders.flatMap(b=>[...Object.keys(b.daily||{}),...Object.keys(b.dailySpend||{})]))].sort();
-    charts.roasDaily = new Chart(el('cRoasDaily'), { type:'line',
-      data:{ labels:allDays, datasets: spenders.map((b,i)=>({
-        label:b.brand,
-        data:allDays.map(d=>{ const sp=(b.dailySpend||{})[d]||0; const rv=((b.daily||{})[d]||{}).revenue||0; return sp>0?+(rv/sp).toFixed(2):null; }),
-        borderColor:COLORS[i%COLORS.length], borderWidth:2, tension:.3, pointRadius:0, spanGaps:true })) },
-      options:roasLineOpts() });
-    charts.roas = new Chart(el('cRoas'), { type:'bar',
-      data:{ labels:names, datasets:[{ data:brands.map(b=>b.roas!=null?+b.roas.toFixed(2):0), backgroundColor:brands.map(b=>b.roas!=null&&b.roas>=1?'#3ddc97':'#ff6b81'), borderRadius:6 }] },
-      options:barOpts('y') });
+    charts.roasDaily = new Chart(el('cRoasDaily'), { type:'line', data:{ labels:allDays, datasets: spenders.map((b,i)=>({
+        label:b.brand, data:allDays.map(d=>{ const sp=(b.dailySpend||{})[d]||0; const rv=((b.daily||{})[d]||{}).revenue||0; return sp>0?+(rv/sp).toFixed(2):null; }),
+        borderColor:COLORS[i%COLORS.length], borderWidth:2, tension:.3, pointRadius:0, spanGaps:true })) }, options:pctLineOpts('ROAS','x') });
+    charts.roas = new Chart(el('cRoas'), { type:'bar', data:{ labels:names, datasets:[{ data:brands.map(b=>b.roas!=null?+b.roas.toFixed(2):0), backgroundColor:brands.map(b=>b.roas!=null&&b.roas>=1?'#35d09a':'#ff6b81'), borderRadius:5 }] }, options:barOpts('y') });
   }
 }
 
 function kpiCard(label, value, delta, spark, cls){
   return `<div class="kpi"><div class="kpi__top"><div class="kpi__l">${label}</div>${delta||''}</div>
-    <div class="kpi__v ${cls||''} num">${value}</div>
-    ${spark?`<div class="kpi__spark">${spark}</div>`:''}</div>`;
+    <div class="kpi__v ${cls||''} num">${value}</div>${spark?`<div class="kpi__spark">${spark}</div>`:''}</div>`;
 }
 function moverCard(title, rows, dir){
-  const inner = rows.length ? rows.map(x=>`<div class="mrow" data-brand="${x.b.key}">
-      <span class="mname">${esc(x.b.brand)}</span>
-      <span class="mval num">${moneyShort(x.b.revenue)} <span class="delta ${dir}">${dir==='up'?'▲':'▼'} ${Math.abs(x.d).toFixed(0)}%</span></span>
-    </div>`).join('') : '<div class="muted small" style="padding:6px 0">Nothing notable.</div>';
-  return `<div class="mcard"><h4>${title}</h4>${inner}</div>`;
+  const inner = rows.length ? rows.map(x=>`<div class="mrow" data-brand="${x.b.key}"><span class="mname">${esc(x.b.brand)}</span><span class="mval num">${moneyShort(x.b.revenue)} <span class="delta ${dir}">${dir==='up'?'▲':'▼'} ${Math.abs(x.d).toFixed(0)}%</span></span></div>`).join('') : '<div class="muted small" style="padding:6px 0">Nothing notable.</div>';
+  const card = `<div class="mcard"><h4>${title}</h4>${inner}</div>`;
+  return card;
 }
 
 function renderExport(){
   const all = state.report.brands, brands = selectedBrands();
   const allSel = state.selected.size === all.length;
   const estOrders = brands.reduce((s,b)=>s+(b.orders||0),0);
-  el('view').innerHTML = `<div class="card fadein">
-    <h3>Export orders → CSV</h3>
-    <p class="muted small" style="margin:0 0 16px;line-height:1.5">One row per order — customer, items, totals, payment &amp; fulfillment status — pulled live from Shopify for the date range and brands you've selected.</p>
+  el('view').innerHTML = `<div class="sect">Export</div><div class="card fadein">
+    <h3>Orders → CSV</h3>
+    <p class="muted small" style="margin:0 0 16px;line-height:1.5">One row per order — customer, items, totals, payment &amp; fulfillment status — pulled live from Shopify for the selected range and brands.</p>
     <div class="kpis" style="margin-bottom:14px">
       ${kpiCard('Date range', esc(state.report.range.label),'','')}
       ${kpiCard('Brands', allSel?('All · '+all.length):(brands.length+' selected'),'','')}
@@ -505,7 +474,7 @@ function renderExport(){
   const btn = el('dlcsv');
   if(btn && state.platform==='shopify') btn.onclick = ()=>{
     const url = `/api/export.csv?platform=${state.platform}&range=${encodeURIComponent(state.rangeText)}&brands=${encodeURIComponent([...state.selected].join(','))}`;
-    el('dlnote').textContent = 'Preparing… large ranges can take a few seconds.';
+    el('dlnote').textContent = 'Preparing…';
     const link = document.createElement('a'); link.href = url; link.download = ''; document.body.appendChild(link); link.click(); link.remove();
     setTimeout(()=>{ el('dlnote').textContent = 'Download started ✓'; }, 2000);
   };
@@ -518,78 +487,67 @@ function renderBrand(key){
   const hasAds = (b.adSpend||0)>0;
   const days = Object.keys(b.daily||{}).sort();
 
-  let html = `<div class="hero fadein">
-    <div class="hero__eyebrow">${esc(b.brand)} · ${esc(state.report.range.label)}</div>
-    <div class="hero__row"><div class="hero__big num">${money(b.revenue)}</div>${p?deltaPill(b.revenue,p.revenue,{big:true}):''}</div>
-    <div class="hero__sub">
-      <span class="hero__stat num"><b>${num(b.orders)}</b> orders ${p?deltaPill(b.orders,p.orders,{silent:true}):''}</span>
-      <span class="hero__stat num"><b>${money(b.aov)}</b> AOV</span>
-      <span class="hero__stat num"><b>${money(b.maxOrder)}</b> top order</span>
-      ${hasAds&&b.roas!=null?`<span class="hero__stat num"><b>${roasFmt(b.roas)}</b> ROAS</span>`:''}
-    </div>
+  let html = `<div class="summary fadein">
+    <div class="summary__eyebrow">${esc(b.brand)} · ${esc(state.report.range.label)} · revenue</div>
+    <div class="summary__row"><div class="summary__big num">${money(b.revenue)}</div>${p?deltaPill(b.revenue,p.revenue,{big:true}):''}</div>
+    <div class="brief"><b>${num(b.orders)}</b> orders · <b>${money(b.aov)}</b> AOV · top order <b>${money(b.maxOrder)}</b>${hasAds&&b.roas!=null?` · <b>${roasFmt(b.roas)}</b> ROAS`:''}${b.sessions!=null?` · <b>${pct(b.sessions?b.orders/b.sessions*100:null)}</b> conv.`:''}</div>
   </div>`;
 
-  html += '<div class="kpis">'
-    + kpiCard('Revenue', money(b.revenue), p?deltaPill(b.revenue,p.revenue):'', sparkline(days.map(d=>b.daily[d].revenue)))
+  html += `<div class="sect">Key metrics</div><div class="kpis">`
     + kpiCard('Orders', num(b.orders), p?deltaPill(b.orders,p.orders):'', sparkline(days.map(d=>b.daily[d].orders),'var(--accent)'))
+    + kpiCard('AOV', money(b.aov), p?deltaPill(b.aov,p.aov):'', '')
     + (hasAds?kpiCard('Ad spend', moneyShort(b.adSpend), p?deltaPill(b.adSpend,p.adSpend):'', ''):'')
     + (hasAds?kpiCard('ROAS', roasFmt(b.roas), p&&p.roas!=null?deltaPill(b.roas,p.roas):'', '', b.roas!=null?(b.roas>=1?'pos':'neg'):''):'')
     + (hasAds?kpiCard('CTR', pct(b.ctr), p&&p.ctr!=null?deltaPill(b.ctr,p.ctr):'', ''):'')
-    + (b.sessions!=null?kpiCard('Conv. rate', pct(b.sessions?b.orders/b.sessions*100:null), (p&&p.sessions)?deltaPill(b.orders/b.sessions*100, p.orders/p.sessions*100):'', ''):'')
+    + (b.sessions!=null?kpiCard('Conv. rate', pct(b.sessions?b.orders/b.sessions*100:null), (p&&p.sessions)?deltaPill(b.orders/b.sessions*100,p.orders/p.sessions*100):'', ''):'')
     + (b.sessions!=null?kpiCard('Sessions', num(b.sessions), p&&p.sessions!=null?deltaPill(b.sessions,p.sessions):'', ''):'')
-    + '</div>';
+    + `</div>`;
 
+  html += `<div class="sect">Trends</div>`;
   html += '<div class="card"><h3>Daily revenue & orders</h3><div class="chartbox tall"><canvas id="cBd"></canvas></div></div>';
-  if(b.dailySessions && Object.keys(b.dailySessions).length)
-    html += '<div class="card"><h3>Daily conversion rate</h3><div class="chartbox"><canvas id="cCvrB"></canvas></div></div>';
-  if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length)
+  const showCvr = b.dailySessions && Object.keys(b.dailySessions).length;
+  if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length){
     html += '<div class="grid2">'
       + '<div class="card"><h3>Daily ROAS</h3><div class="chartbox"><canvas id="cRoasB"></canvas></div></div>'
       + '<div class="card"><h3>Daily CTR</h3><div class="chartbox"><canvas id="cCtrB"></canvas></div></div>'
-      + '</div>'
-      + '<div class="card"><h3>Ad spend vs revenue over time</h3><div class="chartbox"><canvas id="cBsr"></canvas></div></div>';
+      + '</div>';
+  }
+  if(showCvr) html += '<div class="card"><h3>Daily conversion rate</h3><div class="chartbox"><canvas id="cCvrB"></canvas></div></div>';
+  if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length)
+    html += '<div class="card"><h3>Ad spend vs revenue over time</h3><div class="chartbox"><canvas id="cBsr"></canvas></div></div>';
 
   if(b.bestSeller || (b.topProducts&&b.topProducts.length)){
+    html += `<div class="sect">Products</div>`;
     const tp = (b.topProducts||[]).slice(0,5).map(pr=>`<tr><td class="bname">${esc(pr.title)}</td><td class="num">${num(pr.qty)}</td><td class="num">${money(pr.revenue)}</td></tr>`).join('');
-    html += `<div class="card"><h3>Top products</h3><div class="tablewrap"><table style="min-width:auto"><thead><tr><th>Product</th><th>Qty</th><th>Revenue</th></tr></thead><tbody>${tp||'<tr><td class=muted colspan=3>—</td></tr>'}</tbody></table></div></div>`;
+    html += `<div class="card"><div class="tablewrap"><table style="min-width:auto"><thead><tr><th>Product</th><th>Qty</th><th>Revenue</th></tr></thead><tbody>${tp||'<tr><td class=muted colspan=3>—</td></tr>'}</tbody></table></div></div>`;
   }
   if(hasAds && b.campaigns && b.campaigns.length){
-    const cs = b.campaigns.filter(c=>c.spend>0).sort((x,c)=>c.spend-x.spend).slice(0,12)
-      .map(c=>`<tr><td class="bname"><a href="${c.link}" target="_blank" rel="noopener">${esc(c.name)}</a></td><td class="num">${money(c.spend)}</td><td class="num">${pct(c.ctr)}</td></tr>`).join('');
-    html += `<div class="card"><h3>Campaigns</h3><div class="tablewrap"><table style="min-width:auto"><thead><tr><th>Campaign</th><th>Spend</th><th>CTR</th></tr></thead><tbody>${cs}</tbody></table></div></div>`;
+    html += `<div class="sect">Campaigns</div>`;
+    const cs = b.campaigns.filter(c=>c.spend>0).sort((x,c)=>c.spend-x.spend).slice(0,12).map(c=>`<tr><td class="bname"><a href="${c.link}" target="_blank" rel="noopener">${esc(c.name)}</a></td><td class="num">${money(c.spend)}</td><td class="num">${pct(c.ctr)}</td></tr>`).join('');
+    html += `<div class="card"><div class="tablewrap"><table style="min-width:auto"><thead><tr><th>Campaign</th><th>Spend</th><th>CTR</th></tr></thead><tbody>${cs}</tbody></table></div></div>`;
   }
 
   el('view').innerHTML = html;
   destroyCharts();
-  charts.bd = new Chart(el('cBd'), { type:'bar',
-    data:{ labels:days, datasets:[
-      { type:'line', label:'Revenue', data:days.map(d=>Math.round(b.daily[d].revenue)), borderColor:'#3ddc97', backgroundColor:'rgba(61,220,151,.12)', fill:true, tension:.3, pointRadius:0, yAxisID:'y', order:0 },
-      { type:'bar', label:'Orders', data:days.map(d=>b.daily[d].orders), backgroundColor:'rgba(245,177,61,.7)', borderRadius:4, yAxisID:'y1', order:1 } ] },
-    options:lineOpts(true) });
-  if(b.dailySessions && Object.keys(b.dailySessions).length){
+  charts.bd = new Chart(el('cBd'), { type:'bar', data:{ labels:days, datasets:[
+      { type:'line', label:'Revenue', data:days.map(d=>Math.round(b.daily[d].revenue)), borderColor:'#35d09a', backgroundColor:'rgba(53,208,154,.12)', fill:true, tension:.3, pointRadius:0, yAxisID:'y', order:0 },
+      { type:'bar', label:'Orders', data:days.map(d=>b.daily[d].orders), backgroundColor:'rgba(245,177,61,.7)', borderRadius:4, yAxisID:'y1', order:1 } ] }, options:lineOpts(true) });
+  if(showCvr){
     const cvrDays=[...new Set(Object.keys(b.dailySessions))].sort();
-    charts.cvrB = new Chart(el('cCvrB'), { type:'line',
-      data:{ labels:cvrDays, datasets:[{ label:'Conv. rate', data:cvrDays.map(d=>{ const s=b.dailySessions[d]||0; const o=(b.daily[d]||{}).orders||0; return s>0?+((o/s)*100).toFixed(2):null; }), borderColor:'#3ddc97', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
-      options:pctLineOpts('Conv. rate') });
+    charts.cvrB = new Chart(el('cCvrB'), { type:'line', data:{ labels:cvrDays, datasets:[{ label:'Conv. rate', data:cvrDays.map(d=>{ const s=b.dailySessions[d]||0; const o=(b.daily[d]||{}).orders||0; return s>0?+((o/s)*100).toFixed(2):null; }), borderColor:'#35d09a', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] }, options:pctLineOpts('Conv. rate') });
   }
   if(hasAds && b.dailySpend && Object.keys(b.dailySpend).length){
-    const ds = new Set([...days, ...Object.keys(b.dailySpend)]); const dd=[...ds].sort();
-    charts.roasB = new Chart(el('cRoasB'), { type:'line',
-      data:{ labels:dd, datasets:[{ label:'ROAS', data:dd.map(d=>{ const sp=b.dailySpend[d]||0; const rv=(b.daily[d]||{}).revenue||0; return sp>0?+(rv/sp).toFixed(2):null; }), borderColor:'#f5b13d', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
-      options:roasLineOpts() });
+    const dd=[...new Set([...days, ...Object.keys(b.dailySpend)])].sort();
+    charts.roasB = new Chart(el('cRoasB'), { type:'line', data:{ labels:dd, datasets:[{ label:'ROAS', data:dd.map(d=>{ const sp=b.dailySpend[d]||0; const rv=(b.daily[d]||{}).revenue||0; return sp>0?+(rv/sp).toFixed(2):null; }), borderColor:'#f5b13d', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] }, options:pctLineOpts('ROAS','x') });
     const ctrDays=[...new Set(Object.keys(b.dailyImpr||{}))].sort();
-    charts.ctrB = new Chart(el('cCtrB'), { type:'line',
-      data:{ labels:ctrDays, datasets:[{ label:'CTR', data:ctrDays.map(d=>{ const im=(b.dailyImpr||{})[d]||0; const cl=(b.dailyClicks||{})[d]||0; return im>0?+((cl/im)*100).toFixed(2):null; }), borderColor:'#7c8cf8', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] },
-      options:pctLineOpts('CTR') });
-    charts.bsr = new Chart(el('cBsr'), { type:'line',
-      data:{ labels:dd, datasets:[
-        { label:'Revenue', data:dd.map(d=>Math.round((b.daily[d]||{}).revenue||0)), borderColor:'#3ddc97', backgroundColor:'rgba(61,220,151,.12)', fill:true, tension:.3, pointRadius:0 },
-        { label:'Ad spend', data:dd.map(d=>Math.round(b.dailySpend[d]||0)), borderColor:'#ff6b81', borderWidth:2, tension:.3, pointRadius:0 } ] },
-      options:lineOpts(false) });
+    charts.ctrB = new Chart(el('cCtrB'), { type:'line', data:{ labels:ctrDays, datasets:[{ label:'CTR', data:ctrDays.map(d=>{ const im=(b.dailyImpr||{})[d]||0; const cl=(b.dailyClicks||{})[d]||0; return im>0?+((cl/im)*100).toFixed(2):null; }), borderColor:'#7c8cf8', borderWidth:2, tension:.3, pointRadius:0, spanGaps:true }] }, options:pctLineOpts('CTR') });
+    charts.bsr = new Chart(el('cBsr'), { type:'line', data:{ labels:dd, datasets:[
+        { label:'Revenue', data:dd.map(d=>Math.round((b.daily[d]||{}).revenue||0)), borderColor:'#35d09a', backgroundColor:'rgba(53,208,154,.12)', fill:true, tension:.3, pointRadius:0 },
+        { label:'Ad spend', data:dd.map(d=>Math.round(b.dailySpend[d]||0)), borderColor:'#ff6b81', borderWidth:2, tension:.3, pointRadius:0 } ] }, options:lineOpts(false) });
   }
 }
 
-/* ---------- chart option helpers ---------- */
+/* ---------- chart options ---------- */
 const gridc = 'rgba(255,255,255,.06)', tickc = '#9a9aa4';
 function barOpts(indexAxis, twoSeries){
   return { indexAxis: indexAxis==='y'?'y':'x', responsive:true, maintainAspectRatio:false,
@@ -598,25 +556,19 @@ function barOpts(indexAxis, twoSeries){
     scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},autoSkip:true,maxRotation:0} }, y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10}} } } };
 }
 function lineOpts(dual){
-  const s = { x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
-    y:{ position:'left', grid:{color:gridc}, ticks:{color:tickc,font:{size:10}} } };
+  const s = { x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} }, y:{ position:'left', grid:{color:gridc}, ticks:{color:tickc,font:{size:10}} } };
   if(dual) s.y1 = { position:'right', grid:{drawOnChartArea:false}, ticks:{color:tickc,font:{size:10}} };
-  return { responsive:true, maintainAspectRatio:false,
-    plugins:{ legend:{ labels:{color:tickc,boxWidth:12,font:{size:11}} } }, scales:s };
+  return { responsive:true, maintainAspectRatio:false, plugins:{ legend:{ labels:{color:tickc,boxWidth:12,font:{size:11}} } }, scales:s };
 }
-function roasLineOpts(){
+// percentage/multiple line charts. suffix '%' by default, 'x' for ROAS via unit arg.
+function pctLineOpts(label, unitKind){
+  const unit = unitKind==='x' ? 'x' : '%';
+  const multi = label==='ROAS';
   return { responsive:true, maintainAspectRatio:false,
-    plugins:{ legend:{ labels:{color:tickc,boxWidth:12,font:{size:11}} },
-      tooltip:{ callbacks:{ label:c=>`${c.dataset.label}: ${c.parsed.y}x` } } },
+    plugins:{ legend:{ display:multi, labels:{color:tickc,boxWidth:12,font:{size:11}} },
+      tooltip:{ callbacks:{ label:c=>`${c.dataset.label||label}: ${c.parsed.y}${unit}` } } },
     scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
-      y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+'x'}, suggestedMin:0, suggestedMax:5 } } };
-}
-function pctLineOpts(label){
-  return { responsive:true, maintainAspectRatio:false,
-    plugins:{ legend:{ display:false },
-      tooltip:{ callbacks:{ label:c=>`${label}: ${c.parsed.y}%` } } },
-    scales:{ x:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},maxRotation:0,autoSkip:true} },
-      y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+'%'}, suggestedMin:0 } } };
+      y:{ grid:{color:gridc}, ticks:{color:tickc,font:{size:10},callback:v=>v+unit}, suggestedMin:0 } } };
 }
 function esc(s){ return (s==null?'':String(s)).replace(/[&<>"]/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;'}[m])); }
 
@@ -639,7 +591,7 @@ el('modeSeg').querySelectorAll('.seg').forEach(s=>s.onclick=()=>{
   s.classList.add('on');
   state.platform = s.dataset.platform; state.selected = null; state.tab = 'overview'; load();
 });
-el('bpickBtn').onclick=()=>el('bpickPanel').classList.toggle('show');
+el('bpickBtn').onclick=(e)=>{ e.stopPropagation(); el('bpickPanel').classList.toggle('show'); };
 document.addEventListener('click',e=>{ if(!e.target.closest('.bpick')) el('bpickPanel').classList.remove('show'); });
 
 load();
