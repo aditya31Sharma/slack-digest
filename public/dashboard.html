@@ -4,8 +4,11 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0d">
-<meta name="dash-build" content="cockpit-5">
+<meta name="dash-build" content="cockpit-6">
 <title>House of CC — Cockpit</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Fira+Code:wght@400;500;600;700&family=Fira+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet">
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
   :root{
@@ -19,10 +22,11 @@
     --cmd-h:108px;
   }
   *{box-sizing:border-box}
-  html,body{margin:0;background:var(--bg);color:var(--txt);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
+  html,body{margin:0;background:var(--bg);color:var(--txt);font-family:'Fira Sans',-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;-webkit-font-smoothing:antialiased}
   body{padding-bottom:56px}
   a{color:inherit}
-  .num{font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1}
+  /* Fira Code for all numeric readouts -> precise, analytics-tool feel */
+  .num{font-family:'Fira Code',ui-monospace,SFMono-Regular,Menlo,monospace;font-variant-numeric:tabular-nums;font-feature-settings:"tnum" 1;letter-spacing:-.01em}
   .muted{color:var(--muted)} .small{font-size:12px}
 
   /* ---------- command bar (sticky) ---------- */
@@ -144,6 +148,13 @@
   .foot{text-align:center;color:var(--faint);font-size:11px;padding:var(--s5) 0 0}
   .fadein{animation:fade .3s ease}
   @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+  /* a11y (ui-ux-pro-max: Focus States + Reduced Motion, both High severity) */
+  :focus-visible{outline:2px solid var(--accent);outline-offset:2px;border-radius:8px}
+  .navitem:focus-visible,.brow:focus-visible,.tabbtn:focus-visible,.chip:focus-visible,.seg:focus-visible{outline-offset:-2px}
+  @media (prefers-reduced-motion: reduce){
+    *,*::before,*::after{animation-duration:.001ms!important;animation-iteration-count:1!important;transition-duration:.001ms!important;scroll-behavior:auto!important}
+  }
 
   /* ---------- mobile app shell: bottom tab bar + brand list ---------- */
   .tabbar{display:none}
@@ -521,7 +532,7 @@ function renderExport(){
       ${kpiCard('Orders (approx.)', num(estOrders),'','')}
     </div>
     <div class="muted small" style="margin-bottom:18px">Including: ${allSel?'all brands':brands.map(b=>esc(b.brand)).join(', ')}</div>
-    <button class="btn" id="dlcsv" ${state.platform!=='shopify'?'disabled style="opacity:.5"':''}>⬇  Download CSV</button>
+    <button class="btn" id="dlcsv" style="display:inline-flex;align-items:center;gap:7px${state.platform!=='shopify'?';opacity:.5':''}" ${state.platform!=='shopify'?'disabled':''}><svg viewBox="0 0 24 24" width="15" height="15" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg>Download CSV</button>
     <span class="muted small" id="dlnote" style="margin-left:12px"></span>
     ${state.platform!=='shopify'?'<div class="muted small" style="margin-top:12px">Culture Circle export turns on once its data source is connected.</div>':''}
   </div>`;
