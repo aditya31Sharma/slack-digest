@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0d">
-<meta name="dash-build" content="cockpit-6">
+<meta name="dash-build" content="cockpit-7">
 <title>House of CC — Cockpit</title>
 <link rel="preconnect" href="https://fonts.googleapis.com">
 <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -66,7 +66,9 @@
 
   /* ---------- shell: rail + main ---------- */
   .shell{max-width:none;padding:var(--s5) 24px}
-  @media(min-width:960px){ .shell{display:grid;grid-template-columns:248px 1fr;gap:var(--s5);align-items:start} }
+  @media(min-width:960px){ .shell{display:grid;grid-template-columns:248px minmax(0,1fr);gap:var(--s5);align-items:start} }
+  .shell>main{min-width:0}   /* let the 1fr track shrink below content min-content (fixes h-scroll ~1024px) */
+  .grid2{min-width:0}
   @media(max-width:959px){ .shell{padding:14px 12px} }
 
   /* nav rail (doubles as brand leaderboard) */
