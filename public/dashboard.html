@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <meta name="theme-color" content="#0b0b0d">
-<meta name="dash-build" content="cockpit-4">
+<meta name="dash-build" content="cockpit-5">
 <title>House of CC — Cockpit</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
 <style>
@@ -27,7 +27,7 @@
 
   /* ---------- command bar (sticky) ---------- */
   .cmd{position:sticky;top:0;z-index:50;background:rgba(11,11,13,.85);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px);border-bottom:1px solid var(--line)}
-  .cmd__in{max-width:1320px;margin:0 auto;padding:10px 20px}
+  .cmd__in{max-width:none;padding:10px 24px}
   .cmd__row{display:flex;align-items:center;gap:var(--s3);flex-wrap:wrap}
   .cmd__row+.cmd__row{margin-top:10px}
   .brandname{display:flex;align-items:center;gap:9px;font-weight:800;font-size:15px;letter-spacing:.01em;margin-right:auto}
@@ -61,8 +61,9 @@
   .bopt.allrow{border-bottom:1px solid var(--line);margin-bottom:4px;font-weight:700}
 
   /* ---------- shell: rail + main ---------- */
-  .shell{max-width:1320px;margin:0 auto;padding:var(--s5) 20px}
-  @media(min-width:960px){ .shell{display:grid;grid-template-columns:236px 1fr;gap:var(--s5);align-items:start} }
+  .shell{max-width:none;padding:var(--s5) 24px}
+  @media(min-width:960px){ .shell{display:grid;grid-template-columns:248px 1fr;gap:var(--s5);align-items:start} }
+  @media(max-width:959px){ .shell{padding:14px 12px} }
 
   /* nav rail (doubles as brand leaderboard) */
   .rail{display:flex;flex-direction:column;gap:3px}
@@ -74,13 +75,7 @@
   .navitem.on .navitem__name{color:var(--accent)}
   .navitem__name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
   .navitem__meta{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--faint);white-space:nowrap;flex-shrink:0}
-  @media(max-width:959px){
-    .rail{flex-direction:row;overflow-x:auto;gap:6px;padding:2px 0 12px;scrollbar-width:none}
-    .rail::-webkit-scrollbar{display:none}
-    .rail__sect{display:none}
-    .navitem{width:auto;padding:8px 13px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
-    .navitem__meta{display:none}
-  }
+  @media(max-width:959px){ .rail{display:none} }   /* mobile navigates via bottom tab bar */
 
   /* ---------- section label ---------- */
   .sect{font-size:10.5px;letter-spacing:.11em;text-transform:uppercase;color:var(--faint);font-weight:700;margin:var(--s6) 2px var(--s3)}
@@ -149,6 +144,39 @@
   .foot{text-align:center;color:var(--faint);font-size:11px;padding:var(--s5) 0 0}
   .fadein{animation:fade .3s ease}
   @keyframes fade{from{opacity:0;transform:translateY(5px)}to{opacity:1;transform:none}}
+
+  /* ---------- mobile app shell: bottom tab bar + brand list ---------- */
+  .tabbar{display:none}
+  .backbtn{display:none}
+  @media(max-width:959px){
+    body{padding-bottom:calc(64px + env(safe-area-inset-bottom))}
+    .tabbar{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:70;
+      background:rgba(14,14,17,.92);backdrop-filter:blur(18px);-webkit-backdrop-filter:blur(18px);
+      border-top:1px solid var(--line2);padding:8px 8px calc(8px + env(safe-area-inset-bottom))}
+    .tabbtn{flex:1;display:flex;flex-direction:column;align-items:center;gap:4px;background:transparent;border:0;
+      color:var(--faint);font:700 10.5px inherit;letter-spacing:.02em;cursor:pointer;padding:4px 0;-webkit-tap-highlight-color:transparent;transition:.12s}
+    .tabbtn svg{width:22px;height:22px;stroke:currentColor;fill:none;stroke-width:2;stroke-linecap:round;stroke-linejoin:round}
+    .tabbtn.on{color:var(--accent)}
+    /* full-bleed cards, app rhythm */
+    .card,.summary,.mcard{border-radius:14px}
+    .summary{padding:var(--s4)}
+    .summary__big{font-size:clamp(30px,9vw,42px)}
+    .kpis{grid-template-columns:1fr 1fr;gap:10px}
+    .chartbox{height:240px}
+    /* brand-detail back affordance */
+    .backbtn{display:inline-flex;align-items:center;gap:5px;background:var(--panel);border:1px solid var(--line);
+      color:var(--muted);font:700 12.5px inherit;padding:8px 13px;border-radius:9px;cursor:pointer;margin-bottom:var(--s4)}
+    .backbtn:active{background:var(--panel2)}
+  }
+  /* brand list (mobile) */
+  .blist{display:flex;flex-direction:column;gap:8px}
+  .brow{display:flex;align-items:center;justify-content:space-between;gap:10px;width:100%;text-align:left;
+    background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:15px 16px;cursor:pointer;color:var(--txt);
+    -webkit-tap-highlight-color:transparent;transition:.12s}
+  .brow:active{background:var(--panel2)}
+  .brow__name{font-weight:700;font-size:15px}
+  .brow__meta{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);font-variant-numeric:tabular-nums}
+  .chev{color:var(--faint);font-size:20px;line-height:1;margin-left:2px}
 </style>
 </head>
 <body>
@@ -191,6 +219,12 @@
     <div class="foot" id="foot"></div>
   </main>
 </div>
+
+<nav class="tabbar" id="tabbar">
+  <button class="tabbtn" data-nav="overview"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg><span>Overview</span></button>
+  <button class="tabbtn" data-nav="brands"><svg viewBox="0 0 24 24"><line x1="8" y1="6" x2="21" y2="6"/><line x1="8" y1="12" x2="21" y2="12"/><line x1="8" y1="18" x2="21" y2="18"/><circle cx="3.5" cy="6" r="1.3"/><circle cx="3.5" cy="12" r="1.3"/><circle cx="3.5" cy="18" r="1.3"/></svg><span>Brands</span></button>
+  <button class="tabbtn" data-nav="export"><svg viewBox="0 0 24 24"><path d="M12 3v12"/><path d="M7 10l5 5 5-5"/><path d="M4 21h16"/></svg><span>Export</span></button>
+</nav>
 
 <script>
 const API = '/api/dashboard';
@@ -337,8 +371,28 @@ function dailyMerge(brands){ const d={}; for(const b of brands) for(const [k,v] 
 function render(){
   if(state.tab==='overview') renderOverview();
   else if(state.tab==='export') renderExport();
+  else if(state.tab==='brands') renderBrands();
   else renderBrand(state.tab);
+  syncTabbar();
   el('foot').textContent = `Live · Shopify + Meta · ${state.report.range.label} · updated ${new Date().toLocaleString('en-IN',{timeZone:'Asia/Kolkata',hour:'2-digit',minute:'2-digit'})} IST`;
+}
+/* mobile brand list (bottom-tab "Brands") */
+function renderBrands(){
+  const brands = selectedBrands().slice().sort((a,b)=>b.revenue-a.revenue);
+  let html = `<div class="sect">Brands · ${brands.length}</div><div class="blist fadein">`;
+  for(const b of brands){ const p=prevBrand(b.key);
+    html += `<button class="brow" data-brand="${b.key}"><span class="brow__name">${esc(b.brand)}</span><span class="brow__meta num">${moneyShort(b.revenue)} ${p?deltaPill(b.revenue,p.revenue,{silent:true}):''}<span class="chev">›</span></span></button>`;
+  }
+  html += `</div>`;
+  el('view').innerHTML = html;
+  el('view').querySelectorAll('.brow').forEach(r=>r.onclick=()=>{ state.tab=r.dataset.brand; buildNav(); render(); window.scrollTo({top:0}); });
+}
+function syncTabbar(){
+  const isBrand = !['overview','export','brands'].includes(state.tab);
+  el('tabbar').querySelectorAll('.tabbtn').forEach(t=>{
+    const nav=t.dataset.nav;
+    t.classList.toggle('on', nav===state.tab || (nav==='brands' && isBrand));
+  });
 }
 
 /* ---------- briefing ---------- */
@@ -487,7 +541,7 @@ function renderBrand(key){
   const hasAds = (b.adSpend||0)>0;
   const days = Object.keys(b.daily||{}).sort();
 
-  let html = `<div class="summary fadein">
+  let html = `<button class="backbtn" id="backBtn">‹ All brands</button><div class="summary fadein">
     <div class="summary__eyebrow">${esc(b.brand)} · ${esc(state.report.range.label)} · revenue</div>
     <div class="summary__row"><div class="summary__big num">${money(b.revenue)}</div>${p?deltaPill(b.revenue,p.revenue,{big:true}):''}</div>
     <div class="brief"><b>${num(b.orders)}</b> orders · <b>${money(b.aov)}</b> AOV · top order <b>${money(b.maxOrder)}</b>${hasAds&&b.roas!=null?` · <b>${roasFmt(b.roas)}</b> ROAS`:''}${b.sessions!=null?` · <b>${pct(b.sessions?b.orders/b.sessions*100:null)}</b> conv.`:''}</div>
@@ -528,6 +582,7 @@ function renderBrand(key){
   }
 
   el('view').innerHTML = html;
+  const bb = el('backBtn'); if(bb) bb.onclick=()=>{ state.tab='brands'; buildNav(); render(); window.scrollTo({top:0}); };
   destroyCharts();
   charts.bd = new Chart(el('cBd'), { type:'bar', data:{ labels:days, datasets:[
       { type:'line', label:'Revenue', data:days.map(d=>Math.round(b.daily[d].revenue)), borderColor:'#35d09a', backgroundColor:'rgba(53,208,154,.12)', fill:true, tension:.3, pointRadius:0, yAxisID:'y', order:0 },
@@ -593,6 +648,7 @@ el('modeSeg').querySelectorAll('.seg').forEach(s=>s.onclick=()=>{
 });
 el('bpickBtn').onclick=(e)=>{ e.stopPropagation(); el('bpickPanel').classList.toggle('show'); };
 document.addEventListener('click',e=>{ if(!e.target.closest('.bpick')) el('bpickPanel').classList.remove('show'); });
+el('tabbar').querySelectorAll('.tabbtn').forEach(t=>t.onclick=()=>{ state.tab=t.dataset.nav; buildNav(); render(); window.scrollTo({top:0}); });
 
 load();
 </script>
