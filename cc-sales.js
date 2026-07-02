@@ -75,7 +75,7 @@ async function fetchBrandOrders(brandName, gte, lte, token) {
       NOT: { status: { inList: ["refunded", "alt_cancelled"] } }
     }) {
       pageInfo { hasNextPage endCursor }
-      edges { node { amount masterOrder { createdAt } } }
+      edges { node { amount masterOrder { id createdAt } } }
     }
   }`;
   let after = null, guard = 0;
@@ -87,11 +87,11 @@ async function fetchBrandOrders(brandName, gte, lte, token) {
     for (const e of (conn?.edges || [])) {
       const amt = parseFloat(e.node?.amount || 0) || 0;
       const created = e.node?.masterOrder?.createdAt;
-      if (!created) continue;
+      if (!created || amt <= 1) continue;       // skip ₹0/₹1 placeholder line items (CC junk; Looker excludes them)
       revenue += amt; orders++; if (amt > maxOrder) maxOrder = amt;
       const day = istDay(created);
-      daily[day] = daily[day] || { revenue: 0, orders: 0 };
-      daily[day].revenue += amt; daily[day].orders++;
+      const d = daily[day] || (daily[day] = { revenue: 0, orders: 0 });
+      d.revenue += amt; d.orders++;
     }
     if (!conn?.pageInfo?.hasNextPage) break;
     after = conn.pageInfo.endCursor;
