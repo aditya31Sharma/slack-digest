@@ -1,53 +1,134 @@
 // Culture Circle (marketplace) sales adapter.
 //
-// Goal: return the SAME report shape as shopify-sales.fetchDigest so the dashboard
-// renders Culture Circle data identically to Shopify data — just a different platform.
+// Returns the SAME report shape as shopify-sales.fetchDigest so the dashboard
+// renders Culture Circle data identically to Shopify — a different platform.
 //
-// ┌─────────────────────────────────────────────────────────────────────────────┐
-// │  THE ONLY THING TO WIRE: fetchCCBrands(range)  (see below).                    │
-// │  Until it returns data, /api/dashboard?platform=cc reports connected:false    │
-// │  and the dashboard shows a clean "not connected yet" state (never breaks).     │
-// └─────────────────────────────────────────────────────────────────────────────┘
+// Data source: Culture Circle GraphQL API (api.culture-circle.com/graphql).
+// The 16 D2C brands live on CC as PRODUCT brands (variant.product.brandName),
+// so we pull each brand's paid orders for the range and aggregate.
+//
+// Auth: a long-lived refresh token (CC_REFRESH_TOKEN env) is exchanged for a
+// short-lived access token via the `refreshToken` mutation on each fetch.
+// NOTE: the API's WAF returns 403 to non-browser User-Agents — always send a
+// browser UA header.
 
 const { resolveRange } = require('./shopify-sales');
 
-// Each brand object the dashboard understands (ad fields optional):
-//   {
-//     key, brand, slug,
-//     revenue, orders, aov, maxOrder, currency,
-//     daily: { 'YYYY-MM-DD': { revenue, orders } },     // per-day, for trend charts
-//     bestSeller: { title } | null,
-//     topProducts: [ { title, qty, revenue } ],          // optional, top-5
-//     sessions: number | null,                           // optional
-//     // optional ad attribution (hidden if absent):
-//     adSpend, adClicks, adImpr, roas, ctr, dailySpend, campaigns
-//   }
-//
-// `range` = { from: Date|null, to: Date, label: string }  (IST window; from null = all-time)
+const CC_API = 'https://api.culture-circle.com/graphql';
+const UA = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0.0.0 Safari/537.36';
 
-async function fetchCCBrands(range) {
-  // ===========================================================================
-  // WIRE THE REAL CULTURE CIRCLE SOURCE HERE.
-  // e.g. query the CC backend (Postgres / Django API) for sales + orders per brand
-  // within [range.from, range.to), and map each into the brand object shape above.
-  // Return `null` to signal "source not connected yet".
-  //
-  // Example skeleton once the source is known:
-  //   const rows = await ccQuery(range.from, range.to);   // <- your source
-  //   return rows.map(r => ({
-  //     key: r.brandKey, brand: r.brandName, slug: r.brandKey.toLowerCase(),
-  //     revenue: r.revenue, orders: r.orders, maxOrder: r.maxOrder,
-  //     currency: 'INR', aov: r.orders ? r.revenue / r.orders : 0,
-  //     daily: r.daily, bestSeller: r.bestSeller, topProducts: r.topProducts,
-  //     sessions: r.sessions ?? null,
-  //   }));
-  // ===========================================================================
-  return null;
+// Shopify brand key -> Culture Circle product brandName (exact).
+const BRAND_MAP = {
+  '24SONGS': '24Songs',
+  ALANKOCH: 'Alan Koch',
+  ALICEMEYERS: 'Alice Meyers',
+  BE_AUTYST: 'Be Autyst',
+  BLACKLISTCO: 'Blacklist Co',
+  CITYOFDOMES: 'City of Domes',
+  COMOATELIER: 'Como Atelier',
+  ELARAVOSS: 'Elara Voss',
+  FORFKSAKE: 'forfksake',
+  GYMBRAT: 'Gymbrat',
+  KAAND: 'Kaand',
+  MYUGEN: 'Myugen',
+  OFF_SUPPLY: 'Off Supply',
+  PIEREERIC: 'House of Piere Eric',
+  SMILINGCAT: 'Smiling Cat',
+  VOYD: 'Voyd',
+};
+
+async function ccGraphQL(query, variables, token) {
+  const res = await fetch(CC_API, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'User-Agent': UA, // WAF blocks non-browser UAs with 403
+      ...(token ? { Authorization: 'Bearer ' + token } : {}),
+    },
+    body: JSON.stringify({ query, variables: variables || {} }),
+  });
+  if (!res.ok) throw new Error(`cc_http_${res.status}`);
+  const j = await res.json();
+  if (j.errors) throw new Error('cc_gql: ' + (j.errors[0]?.message || 'error'));
+  return j.data;
 }
 
-// Builds the dashboard report for Culture Circle. Same shape the dashboard reads
-// for Shopify; `platform` + `connected` let the UI label the mode and degrade
-// gracefully before the source is wired.
+// Exchange the stored refresh token for a fresh access token.
+async function ccAccessToken() {
+  const rt = process.env.CC_REFRESH_TOKEN;
+  if (!rt) return null;
+  const data = await ccGraphQL(
+    'mutation($r: String!) { refreshToken(refreshToken: $r) { token } }',
+    { r: rt },
+  );
+  return data?.refreshToken?.token || null;
+}
+
+const istDay = (iso) => new Date(iso).toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+// Paginate one brand's paid orders in [gte, lte) and aggregate.
+async function fetchBrandOrders(brandName, gte, lte, token) {
+  const q = `query CCBrandOrders($brand: String!, $gte: DateTime!, $lte: DateTime!, $after: String) {
+    allOrders(first: 100, after: $after, filters: {
+      variant: { product: { brandName: { exact: $brand } } }
+      masterOrder: { isPaid: { exact: true }, createdAt: { gte: $gte, lte: $lte } }
+      NOT: { status: { inList: ["refunded", "alt_cancelled"] } }
+    }) {
+      pageInfo { hasNextPage endCursor }
+      edges { node { amount masterOrder { createdAt } } }
+    }
+  }`;
+  let after = null, guard = 0;
+  let revenue = 0, orders = 0, maxOrder = 0;
+  const daily = {};
+  while (guard++ < 40) {
+    const data = await ccGraphQL(q, { brand: brandName, gte, lte, after }, token);
+    const conn = data?.allOrders;
+    for (const e of (conn?.edges || [])) {
+      const amt = parseFloat(e.node?.amount || 0) || 0;
+      const created = e.node?.masterOrder?.createdAt;
+      if (!created) continue;
+      revenue += amt; orders++; if (amt > maxOrder) maxOrder = amt;
+      const day = istDay(created);
+      daily[day] = daily[day] || { revenue: 0, orders: 0 };
+      daily[day].revenue += amt; daily[day].orders++;
+    }
+    if (!conn?.pageInfo?.hasNextPage) break;
+    after = conn.pageInfo.endCursor;
+  }
+  return { revenue, orders, maxOrder, daily, aov: orders ? revenue / orders : 0 };
+}
+
+async function fetchCCBrands(range) {
+  const token = await ccAccessToken();
+  if (!token) return null; // no CC_REFRESH_TOKEN -> "not connected"
+
+  const gte = (range && range.from ? range.from : new Date('2020-01-01')).toISOString();
+  const lte = (range && range.to ? range.to : new Date()).toISOString();
+
+  const keys = Object.keys(BRAND_MAP);
+  const out = new Array(keys.length);
+  const LIMIT = 4; let i = 0;
+  async function worker() {
+    while (i < keys.length) {
+      const idx = i++; const key = keys[idx]; const brandName = BRAND_MAP[key];
+      try {
+        const m = await fetchBrandOrders(brandName, gte, lte, token);
+        out[idx] = {
+          key, brand: brandName, slug: key.toLowerCase(),
+          revenue: m.revenue, orders: m.orders, maxOrder: m.maxOrder, aov: m.aov,
+          currency: 'INR', daily: m.daily, sessions: null, bestSeller: null, topProducts: [],
+        };
+      } catch (e) {
+        out[idx] = { key, brand: brandName, slug: key.toLowerCase(), revenue: 0, orders: 0, maxOrder: 0, aov: 0, currency: 'INR', daily: {}, sessions: null, bestSeller: null, topProducts: [], error: e.message };
+      }
+    }
+  }
+  await Promise.all(Array.from({ length: Math.min(LIMIT, keys.length) }, worker));
+  return out.filter(Boolean);
+}
+
+// Builds the dashboard report for Culture Circle (same shape as Shopify).
 async function fetchCCDigest({ range } = {}) {
   range = range || resolveRange('yesterday');
   let brands;
@@ -71,8 +152,7 @@ async function fetchCCDigest({ range } = {}) {
     }
   }
   totals.aov = totals.orders ? totals.revenue / totals.orders : 0;
-  const hasAds = brands.some(b => (b.adSpend || 0) > 0);
-  return { platform: 'cc', connected: true, range, brands, totals, dailyAll, ccy: 'INR', ads: { hasData: hasAds } };
+  return { platform: 'cc', connected: true, range, brands, totals, dailyAll, ccy: 'INR', ads: { hasData: false } };
 }
 
 function emptyTotals() { return { revenue: 0, orders: 0, maxOrder: 0, sessions: 0, sessionsKnown: false, aov: 0 }; }
