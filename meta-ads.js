@@ -64,12 +64,21 @@ async function fetchMetaInsights(range) {
     + `?level=campaign&fields=campaign_id,campaign_name,spend,impressions,clicks&time_range=${tr}&time_increment=1&limit=500&access_token=${TOKEN}`;
   const rows = await getAll(url);
   const byBrand = {}; const account = { spend: 0, clicks: 0, impr: 0, spendExCC: 0, clicksExCC: 0, imprExCC: 0 };
+  const ccByBrand = {}; // Culture Circle "cc" campaigns, attributed per brand (for the CC dashboard)
   const campAgg = {}; // brandKey -> { campaignId -> {id,name,link,spend,clicks,impr} }
   for (const r of rows) {
     const sp = parseFloat(r.spend || 0), cl = parseInt(r.clicks || 0), im = parseInt(r.impressions || 0);
     const date = r.date_start;
     account.spend += sp; account.clicks += cl; account.impr += im;   // raw CC2 total (incl catalog)
-    if (isCC(r.campaign_name)) continue;                              // drop shared "cc"/catalog ad sets
+    if (isCC(r.campaign_name)) {                                      // "cc" ad sets = Culture Circle spend (not Shopify)
+      const kc = matchBrand(r.campaign_name);
+      if (kc) {
+        const cb = ccByBrand[kc] || (ccByBrand[kc] = { spend: 0, clicks: 0, impr: 0, dailySpend: {}, dailyClicks: {}, dailyImpr: {} });
+        cb.spend += sp; cb.clicks += cl; cb.impr += im;
+        if (date) { cb.dailySpend[date] = (cb.dailySpend[date] || 0) + sp; cb.dailyClicks[date] = (cb.dailyClicks[date] || 0) + cl; cb.dailyImpr[date] = (cb.dailyImpr[date] || 0) + im; }
+      }
+      continue;                                                      // excluded from Shopify total + per-brand
+    }
     account.spendExCC += sp; account.clicksExCC += cl; account.imprExCC += im;
     const k = matchBrand(r.campaign_name);
     if (!k) continue;
@@ -94,6 +103,7 @@ async function fetchMetaInsights(range) {
     b.high = sorted[0] || null;
     b.low = sorted.length > 1 ? sorted[sorted.length - 1] : null;
   }
+  for (const k in ccByBrand) { const c = ccByBrand[k]; c.ctr = c.impr ? c.clicks / c.impr * 100 : 0; }
   account.ctr = account.impr ? account.clicks / account.impr * 100 : 0;
   account.ctrExCC = account.imprExCC ? account.clicksExCC / account.imprExCC * 100 : 0;
   // extra portfolios (e.g. ForFkSake's own ad account) - add their total spend
@@ -109,7 +119,32 @@ async function fetchMetaInsights(range) {
       extraAccounts.push({ account: acc, spend: sp });
     } catch (e) { extraAccounts.push({ account: acc, error: e.message }); }
   }
-  return { byBrand, account, since, until, extraSpend, extraClicks, extraImpr, extraAccounts };
+  return { byBrand, ccByBrand, account, since, until, extraSpend, extraClicks, extraImpr, extraAccounts };
+}
+
+// Attach Culture Circle ad spend/ROAS/CTR (from "cc" campaigns) onto CC brands + a report.ads summary.
+function attachCCAds(report, ins) {
+  if (!ins || !ins.ccByBrand) { report.ads = { hasData: false }; return report; }
+  const cc = ins.ccByBrand;
+  let totalSpend = 0, totalClicks = 0, totalImpr = 0;
+  for (const b of (report.brands || [])) {
+    const a = cc[b.key];
+    b.adSpend = a ? a.spend : 0; b.adClicks = a ? a.clicks : 0; b.adImpr = a ? a.impr : 0;
+    b.ctr = a && a.impr ? a.ctr : null;
+    b.roas = b.adSpend > 0 ? b.revenue / b.adSpend : null;
+    b.dailySpend = a ? a.dailySpend : {};
+    b.dailyClicks = a ? a.dailyClicks : {};
+    b.dailyImpr = a ? a.dailyImpr : {};
+    b.campaigns = [];
+    if (a) { totalSpend += a.spend; totalClicks += a.clicks; totalImpr += a.impr; }
+  }
+  report.ads = {
+    hasData: totalSpend > 0,
+    totalSpend, totalClicks, totalImpr,
+    avgCtr: totalImpr ? totalClicks / totalImpr * 100 : null,
+    roas: totalSpend > 0 ? report.totals.revenue / totalSpend : null,
+  };
+  return report;
 }
 
 // Attach ad spend / ROAS / CTR onto each brand and a report.ads summary.
@@ -151,4 +186,4 @@ function attachAds(report, ins) {
   return report;
 }
 
-module.exports = { fetchMetaInsights, attachAds, matchBrand };
+module.exports = { fetchMetaInsights, attachAds, attachCCAds, matchBrand };

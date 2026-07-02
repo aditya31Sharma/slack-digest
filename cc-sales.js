@@ -152,7 +152,14 @@ async function fetchCCDigest({ range } = {}) {
     }
   }
   totals.aov = totals.orders ? totals.revenue / totals.orders : 0;
-  return { platform: 'cc', connected: true, range, brands, totals, dailyAll, ccy: 'INR', ads: { hasData: false } };
+  const report = { platform: 'cc', connected: true, range, brands, totals, dailyAll, ccy: 'INR', ads: { hasData: false } };
+  // Join Culture Circle ad spend (the "cc" Meta campaigns we exclude on the Shopify side).
+  try {
+    const ma = require('./meta-ads');
+    const ins = await ma.fetchMetaInsights(range); // null when META_TOKEN is unset
+    ma.attachCCAds(report, ins);
+  } catch (e) { report.ads = { hasData: false, error: e.message }; }
+  return report;
 }
 
 function emptyTotals() { return { revenue: 0, orders: 0, maxOrder: 0, sessions: 0, sessionsKnown: false, aov: 0 }; }
